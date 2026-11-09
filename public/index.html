@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Faturale</title>
+  <link rel="icon" href="logo-f.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <section id="tela-login" class="login oculto">
+    <div class="login-caixa">
+      <img src="logo-f.png" alt="">
+      <div class="marca-nome">FATURALE</div>
+      <div class="marca-sub">CONSULTORIA EM SAÚDE</div>
+      <form id="form-login">
+        <div class="campo"><label for="login">Usuário</label><input id="login" autocomplete="username" required></div>
+        <div class="campo"><label for="senha">Senha</label><input id="senha" type="password" autocomplete="current-password" required></div>
+        <button class="btn btn-primario" style="width:100%;justify-content:center">Entrar</button>
+        <p class="erro" id="erro-login"></p>
+      </form>
+      <div class="teste oculto" id="acesso-teste">
+        <p>Acesso rápido (modo de teste)</p>
+        <div class="teste-botoes"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tela-app" class="app oculto">
+    <aside class="lateral">
+      <div class="marca">
+        <img src="logo-f.png" alt="">
+        <div><b>FATURALE</b><span>CONSULTORIA EM SAÚDE</span></div>
+      </div>
+      <nav id="abas"></nav>
+      <div class="usuario"><div><span id="nome-usuario"></span><small id="perfil-usuario"></small></div><button id="sair">Sair</button></div>
+    </aside>
+    <main id="conteudo"></main>
+  </section>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
