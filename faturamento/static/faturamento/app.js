@@ -977,7 +977,11 @@ async function telaCoordenacao() {
     if (p) { f.por = p.dataset.por; telaCoordenacao(); }
     if (pr) { f.producao = pr.dataset.producao; telaCoordenacao(); }
   };
-  $('#csv').addEventListener('click', () => { location.href = `/api/relatorios/csv?${qs(params())}`; });
+  $('#csv').addEventListener('click', tentar(async () => {
+    const r = await fetch(`/api/relatorios/csv?${qs(params())}`);
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(await r.blob()), download: 'faturale-relatorio.csv' });
+    a.click();
+  }));
   carregar();
 }
 
