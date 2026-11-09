@@ -62,10 +62,11 @@ const ICONES = {
   coordenacao: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
   diretoria: '<rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/>',
   xml: '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>',
+  calendario: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
 };
 const icone = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[n]}</svg>`;
-const NOMES_ABAS = { faturamento: 'Faturamento', xml: 'Envio de XML', gestao: 'Gestão', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
+const NOMES_ABAS = { faturamento: 'Faturamento', xml: 'Envio de XML', calendario: 'Calendário', gestao: 'Gestão', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
 
 // ---------- Estado ----------
 const estado = { usuario: null, convenios: [], faturistas: [], aba: null };
@@ -131,7 +132,7 @@ async function entrar() {
   const salva = location.hash.slice(1);
   // Abre na aba "mais alta" do perfil (diretor → Diretoria…). Faturista/XML: Faturamento se fatura
   // algum convênio, senão Envio de XML.
-  let aba = u.abas[u.abas.length - 1];
+  let aba = u.abas.filter((a) => a !== 'calendario').pop();
   if (u.perfil === 'faturista') aba = meusConvenios('faturista_id').length || !meusConvenios('xml_id').length ? 'faturamento' : 'xml';
   abrirAba(u.abas.includes(salva) ? salva : aba);
 }
@@ -140,9 +141,10 @@ $('#abas').addEventListener('click', (e) => { const b = e.target.closest('[data-
 function abrirAba(aba) {
   estado.aba = aba;
   $('#conteudo').onclick = null;
+  $('#conteudo').onchange = null;
   history.replaceState(null, '', `#${aba}`);
   $$('.aba').forEach((b) => b.classList.toggle('ativa', b.dataset.aba === aba));
-  const telas = { faturamento: telaFaturamento, xml: telaXml, gestao: telaGestao, coordenacao: telaCoordenacao, diretoria: telaDiretoria };
+  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, gestao: telaGestao, coordenacao: telaCoordenacao, diretoria: telaDiretoria };
   tentar(telas[aba])();
 }
 
@@ -504,6 +506,157 @@ async function telaXml() {
   }));
   carregarPendentes();
   carregarEnvios();
+}
+
+// ---------- Aba: Calendário de entregas ----------
+// Quais convênios entregar em cada dia. A pessoa marca como entregue o que é dela;
+// a coordenação monta o mês (adiciona, tira, marca feriado).
+const REGRAS_CALENDARIO = [
+  'Entregar os protocolos com as guias na ORDEM do relatório (alfabética ou por data de atendimento).',
+  'Entregar as faturas pelo menos 1 dia antes da data de envio, conforme o calendário.',
+  'Sempre conferir o VALOR do protocolo impresso com o do sistema (Tasy): os dois precisam estar iguais.',
+  'Protocolo com erro: corrigir as guias. Nunca tirar guias do protocolo sem arrumá-las.',
+  'Não deixar protocolo em provisório; se for o caso, pedir a exclusão. Facilita o fechamento.',
+];
+const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const NOMES_MES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const estadoCal = { mes: '', filtro: '', pessoa: '' };
+
+async function telaCalendario() {
+  const s = estadoCal;
+  const coord = estado.usuario.abas.includes('coordenacao');
+  if (!s.mes) s.mes = hoje().slice(0, 7);
+  if (!s.filtro) s.filtro = veTodos() ? 'todos' : 'meus';
+  const [cal, prox] = await Promise.all([api(`/api/calendario?mes=${s.mes}`), api('/api/calendario/proximos')]);
+  const [ano, mes] = s.mes.split('-').map(Number);
+
+  const visivel = (e) => {
+    if (s.pessoa) return e.faturista_id === Number(s.pessoa) || e.xml_id === Number(s.pessoa);
+    return s.filtro === 'meus' ? e.meu : true;
+  };
+  const porDia = {};
+  for (const e of cal.entregas) (porDia[e.data] ||= []).push(e);
+  const feriados = Object.fromEntries(cal.feriados.map((f) => [f.data, f.descricao]));
+
+  const linhaEntrega = (e, comData = false) => `<div class="entrega ${e.meu ? 'minha' : ''} ${e.concluido ? 'feita' : ''}" data-id="${e.id}"
+      title="${esc(`Fatura: ${e.faturista || '—'} · XML: ${e.tem_xml ? e.responsavel_xml || '—' : 'sem XML'}${e.concluido ? ` · entregue por ${e.concluido_por}` : ''}`)}">
+      ${e.pode_concluir ? `<input type="checkbox" data-concluir ${e.concluido ? 'checked' : ''} aria-label="Marcar ${esc(e.convenio)} como entregue">` : '<span class="ponto"></span>'}
+      <span class="nome">${esc(e.convenio)}${e.observacao ? ` <small>${esc(e.observacao)}</small>` : ''}${comData ? ` <small>· ${esc(e.faturista || 'sem faturista')}</small>` : ''}</span>
+      ${coord ? '<button class="tirar" data-tirar title="Tirar do calendário">×</button>' : ''}</div>`;
+
+  // Grade do mês
+  const primeiro = new Date(ano, mes - 1, 1);
+  const diasNoMes = new Date(ano, mes, 0).getDate();
+  const celulas = [];
+  for (let i = 0; i < primeiro.getDay(); i++) celulas.push('<div class="dia vazio"></div>');
+  for (let d = 1; d <= diasNoMes; d++) {
+    const iso = `${s.mes}-${String(d).padStart(2, '0')}`;
+    const todas = porDia[iso] || [];
+    const mostrar = todas.filter(visivel);
+    const ocultas = todas.length - mostrar.length;
+    const semana = new Date(ano, mes - 1, d).getDay();
+    celulas.push(`<div class="dia ${iso === cal.hoje ? 'hoje' : ''} ${semana === 0 || semana === 6 ? 'fds' : ''} ${feriados[iso] ? 'feriado' : ''} ${todas.length ? '' : 'sem'}" data-dia="${iso}">
+      <div class="dia-topo"><b>${d}</b><span class="dsem">${DIAS_SEMANA[semana]}</span>${feriados[iso] ? `<span class="selo devolvido">${esc(feriados[iso])}</span>` : ''}
+        ${coord ? '<button class="mais" data-adicionar title="Adicionar convênio neste dia">+</button>' : ''}</div>
+      ${mostrar.map((e) => linhaEntrega(e)).join('')}
+      ${ocultas ? `<small class="apagado">+${ocultas} de outras pessoas</small>` : ''}</div>`);
+  }
+
+  // Próximas entregas (hoje e os próximos dias com entrega)
+  const proxDias = [...new Set(prox.entregas.map((e) => e.data))];
+  const amanhaIso = isoLocal(new Date(Date.now() + 864e5));
+  const rotuloDia = (iso) => {
+    const dt = new Date(`${iso}T12:00:00`);
+    const base = `${DIAS_SEMANA[dt.getDay()]} ${dataBR(iso).slice(0, 5)}`;
+    return iso === prox.hoje ? `Hoje · ${base}` : iso === amanhaIso ? `Amanhã · ${base}` : base;
+  };
+  const proxHtml = proxDias.map((iso) => {
+    const lista = prox.entregas.filter((e) => e.data === iso).filter(visivel);
+    if (!lista.length) return '';
+    const feitas = lista.filter((e) => e.concluido).length;
+    return `<div class="prox-dia"><h3>${rotuloDia(iso)} <small>${feitas}/${lista.length} entregues</small></h3>${lista.map((e) => linhaEntrega(e, true)).join('')}</div>`;
+  }).join('') || '<div class="apagado">Nada para entregar nos próximos dias.</div>';
+
+  const portais = estado.convenios.filter((c) => c.ativo && c.prazo_texto && (s.filtro !== 'meus' || c.faturista_id === estado.usuario.id || c.xml_id === estado.usuario.id));
+  const mesAnt = new Date(ano, mes - 2, 1);
+  const mesProx = new Date(ano, mes, 1);
+  const ym = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+  const totalVisiveis = cal.entregas.filter(visivel);
+
+  $('#conteudo').innerHTML = `
+    <div class="topo"><div><h1>Calendário de entregas</h1><p>Quais convênios entregar em cada dia. Entregue a fatura ao setor pelo menos 1 dia antes.</p></div>
+      <div class="acoes">
+        <div class="alternar"><button data-filtro="meus" class="${s.filtro === 'meus' && !s.pessoa ? 'ativo' : ''}">Meus convênios</button><button data-filtro="todos" class="${s.filtro === 'todos' && !s.pessoa ? 'ativo' : ''}">Todos</button></div>
+        ${veTodos() ? `<select id="cal-pessoa" style="width:auto">${opcoesPessoa(s.pessoa, 'Filtrar por pessoa')}</select>` : ''}
+        <button class="btn btn-claro" onclick="print()">Imprimir</button>
+      </div></div>
+    <div class="cartao"><h2>Próximas entregas <small class="apagado">marque quando entregar</small></h2><div class="prox">${proxHtml}</div></div>
+    <div class="cartao">
+      <h2><span class="mes-nav"><button class="btn btn-claro btn-mini" data-mes="${ym(mesAnt)}">‹</button>
+        <span>${NOMES_MES[mes - 1][0].toUpperCase() + NOMES_MES[mes - 1].slice(1)} de ${ano}</span><button class="btn btn-claro btn-mini" data-mes="${ym(mesProx)}">›</button>
+        ${s.mes !== hoje().slice(0, 7) ? `<button class="btn btn-claro btn-mini" data-mes="${hoje().slice(0, 7)}">Hoje</button>` : ''}</span>
+        <small class="apagado">${totalVisiveis.filter((e) => e.concluido).length}/${totalVisiveis.length} entregues no mês</small></h2>
+      ${cal.entregas.length || cal.feriados.length ? '' : `<div class="avisos">Este mês ainda não tem calendário.${coord ? ' Use o + em cada dia para montar.' : ' A coordenação ainda vai montar.'}</div>`}
+      <div class="cal-cabeca">${DIAS_SEMANA.map((d) => `<span>${d}</span>`).join('')}</div>
+      <div class="cal-grade">${celulas.join('')}</div>
+      <p class="apagado legenda"><span class="entrega minha exemplo"><span class="ponto"></span><span class="nome">Seu convênio</span></span>
+        <span class="entrega exemplo"><span class="ponto"></span><span class="nome">De outra pessoa</span></span> Passe o mouse para ver quem fatura e quem passa o XML.</p>
+    </div>
+    <div class="duas">
+      <div class="cartao"><h2>Portais fixos <small class="apagado">prazo de cada portal no mês</small></h2>
+        <div class="chips">${portais.map((c) => `<span class="chip ${c.aberto_hoje ? 'aberto' : ''}"><b>${esc(c.nome)}</b><small>${esc(c.prazo_texto)}${c.aberto_hoje ? ' · aberto hoje' : ''}</small></span>`).join('') || '<span class="apagado">Nenhum.</span>'}</div></div>
+      <div class="cartao"><h2>Regras do calendário</h2><ol class="regras">${REGRAS_CALENDARIO.map((r) => `<li>${esc(r)}</li>`).join('')}</ol></div>
+    </div>`;
+
+  // Navegação e filtros
+  $('#conteudo').onclick = tentar(async (e) => {
+    const alvo = e.target;
+    if (alvo.closest('[data-mes]')) { s.mes = alvo.closest('[data-mes]').dataset.mes; return telaCalendario(); }
+    if (alvo.closest('[data-filtro]')) { s.filtro = alvo.closest('[data-filtro]').dataset.filtro; s.pessoa = ''; return telaCalendario(); }
+    const linha = alvo.closest('.entrega[data-id]');
+    if (alvo.closest('[data-tirar]') && linha) {
+      const ent = cal.entregas.find((x) => x.id === Number(linha.dataset.id)) || prox.entregas.find((x) => x.id === Number(linha.dataset.id));
+      if (!confirm(`Tirar ${ent.convenio} do dia ${dataBR(ent.data)}?`)) return;
+      await api(`/api/calendario/${ent.id}`, { method: 'DELETE' });
+      return telaCalendario();
+    }
+    if (alvo.closest('[data-adicionar]')) adicionarNoDia(alvo.closest('[data-dia]').dataset.dia, feriados);
+  });
+  $('#conteudo').onchange = tentar(async (e) => {
+    if (e.target.id === 'cal-pessoa') { s.pessoa = e.target.value; return telaCalendario(); }
+    const caixa = e.target.closest('[data-concluir]');
+    if (!caixa) return;
+    const id = Number(caixa.closest('.entrega').dataset.id);
+    try {
+      const r = await api(`/api/calendario/${id}`, { method: 'PATCH', corpo: { concluido: caixa.checked } });
+      avisar(r.concluido ? `${r.convenio}: entregue.` : `${r.convenio}: desmarcado.`);
+    } finally { telaCalendario(); }
+  });
+}
+
+// Coordenação: adicionar convênio num dia, ou marcar o dia como feriado
+function adicionarNoDia(dia, feriados) {
+  modal(`<h2>${dataBR(dia)}</h2><form>
+    <div class="grade">
+      <div class="campo"><label>Convênio</label><select name="convenioId"><option value="">Escolha…</option>${opcoesConvenio('', false)}</select></div>
+      <div class="campo"><label>…ou um convênio novo</label><input name="convenioNome" placeholder="Nome"></div>
+      <div class="campo"><label>Observação</label><input name="observacao" placeholder="ex.: até as 10h"></div>
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:4px"><input type="checkbox" name="feriado" style="width:auto" ${feriados[dia] ? 'checked' : ''}>
+      Este dia é feriado <input name="descricao" placeholder="Descrição" value="${esc(feriados[dia] || '')}" style="max-width:200px;margin-left:8px"></label>
+    <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Cancelar</button><button class="btn btn-primario">Salvar</button></div></form>`,
+  (el, fechar) => $('form', el).addEventListener('submit', tentar(async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target));
+    if (!!f.feriado !== !!feriados[dia] || (f.feriado && f.descricao !== feriados[dia])) {
+      await api('/api/calendario/feriado', { method: 'POST', corpo: { data: dia, feriado: !!f.feriado, descricao: f.descricao || 'Feriado' } });
+    }
+    if (f.convenioId || f.convenioNome.trim()) {
+      await api('/api/calendario', { method: 'POST', corpo: { data: dia, convenioId: f.convenioId || null, convenioNome: f.convenioNome, observacao: f.observacao } });
+      await carregarListas();
+    }
+    fechar(); avisar('Calendário atualizado.'); telaCalendario();
+  })));
 }
 
 // ---------- Aba: Gestão ----------

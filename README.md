@@ -51,6 +51,11 @@ demonstração** tira os lotes fictícios. Para começar do zero, apague a pasta
   acha o lote pelo número e amarra. Se o lote ainda não foi lançado, o envio fica **esperando o
   lote** e amarra sozinho quando o faturista lançar. Lista os lotes lançados que ainda esperam XML
   (com "Anexar protocolo" e "Marcar enviado") e o histórico de envios.
+- **Calendário** — o calendário de entregas do mês (novembro/2026 já cadastrado a partir do PDF):
+  quais convênios entregar em cada dia, feriados, "Próximas entregas" (hoje, amanhã…), os portais
+  fixos e as regras do calendário. Cada pessoa marca como entregue o que é dela; "Meus convênios"
+  mostra só os seus. A coordenação monta o mês pelo **+** de cada dia (convênio, observação como
+  "até as 10h", feriado) e tira com o **×**.
 - **Gestão** — lotes da equipe (conferir, devolver com motivo, editar, excluir, filtro por situação
   do XML) e usuários.
 - **Coordenação**

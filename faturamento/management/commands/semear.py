@@ -11,7 +11,7 @@ from decimal import Decimal
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from faturamento.models import Convenio, EnvioXml, Lote, Usuario
+from faturamento.models import Convenio, EntregaCalendario, EnvioXml, Feriado, Lote, Usuario
 
 EQUIPE = [
     # nome, login, perfil
@@ -54,7 +54,43 @@ PORTAIS = {
     'Unafisco': ('1 à 7', 1, 7), 'Unimed Seguros': ('1 à 21', 1, 21), 'Unity': ('1 à 5', 1, 5),
 }
 
+PORTAIS['Proasa'] = ('1 à 7', 1, 7)
+
 CODIGOS = {'Bradesco Saúde': '635902'}
+
+# Calendário de novembro/2026 (PDF "calendario"). "Nome|observação".
+# Nomes do calendário ligados aos da planilha de XML: CEF = Caixa, Bradesco = Bradesco Saúde,
+# Unimed Seguro = Unimed Seguros, Capesesp = Capsesp, Mediservice = Medservice, Benefiz = Benefis,
+# Hosp. Naval = Naval, Life Empresarial = Life, GEAP Periódico = GEAP (obs. "Periódico").
+FERIADOS = {date(2026, 11, 2): 'Finados'}
+CALENDARIO = {
+    date(2026, 11, 3): ['Assefaz', 'BRB', 'Cassi', 'Casec', 'E-vida', 'Notredame Minas', 'Plenum', 'Polícia Federal|até as 10h',
+                        'Prevent Senior', 'Serpro', 'STM', 'TRF 1ª Região', 'TRF Seção', 'TRT', 'Salutá'],
+    date(2026, 11, 4): ['Assefaz', 'BRB', 'Casec', 'E-vida', 'Plenum', 'Prevent Senior', 'TRF 1ª Região', 'TRF Seção',
+                        'Benecap', 'Capsesp', 'HFA', 'Postal Saúde', 'Proasa', 'ASPDF'],
+    date(2026, 11, 5): ['Assefaz', 'Caixa', 'E-vida', 'Nova Saúde', 'Plenum|até as 9h', 'RISA', 'STM', 'TBS', 'Unity|até as 9h', 'Vittalis'],
+    date(2026, 11, 6): ['AMHP', 'Assefaz', 'Bradesco Saúde', 'E-vida|até as 13h', 'Hapvida', 'MPU', 'STM', 'AFEB', 'Conab', 'HFAB', 'S1 Saúde'],
+    date(2026, 11, 9): ['Assefaz', 'Chronos', 'Expertise', 'Nova Medicina', 'RH Med', 'STM', 'Unafisco|até as 10h', 'Telos',
+                        'Total Life', 'Anchieta', 'ASFUB', 'ASSPUB', 'BRA Engenharia', 'Clinbrás', 'Fascal', 'Gravia',
+                        'Naval|Hosp. Naval', 'Life|Life Empresarial', 'Medservice'],
+    date(2026, 11, 10): ['BNDES', 'Benefis', 'Centro Médico', 'Examed', 'GEAP', 'GEAP|Periódico, até as 9h', 'Prevermed',
+                         'Senado', 'Select', 'STM'],
+    date(2026, 11, 11): ['Select', 'STM', 'Força Policial'],
+    date(2026, 11, 12): ['STJ', 'Caixa'],
+    date(2026, 11, 13): ['AMHP', 'Cabesp', 'Hapvida', 'Petrobrás', 'Serpro', 'Grupo Santa'],
+    date(2026, 11, 16): ['TRT', 'Câmara'],
+    date(2026, 11, 17): ['Mapfre', 'TST', 'TJDFT', 'TRE'],
+    date(2026, 11, 18): ['Affego', 'STF', 'TRE'],
+    date(2026, 11, 19): ['Caixa', 'MPU', 'TRE', 'Notredame'],
+    date(2026, 11, 20): ['AMHP', 'Bradesco Saúde', 'Cassi', 'Hapvida', 'Unimed Seguros', 'TRE'],
+    date(2026, 11, 23): ['Allianz', 'Care Plus', 'Sano', 'TRF 1ª Região', 'TRF Seção', 'Omint'],
+    date(2026, 11, 24): ['Cifais', 'TRF Seção', 'TRF 1ª Região'],
+    date(2026, 11, 25): ['Câmara', 'STF'],
+    date(2026, 11, 26): ['STJ', 'Salú', 'Caixa'],
+    date(2026, 11, 27): ['AMHP', 'Hapvida'],
+    date(2026, 11, 30): ['Notredame'],
+    date(2026, 12, 1): ['Mapfre|no calendário: 31-NOV', 'TST|no calendário: 31-NOV'],
+}
 
 # Quem fatura (exemplo para a demonstração; a coordenação muda pela tela)
 FATURAMENTO = {
@@ -113,9 +149,25 @@ class Command(BaseCommand):
                 c.save()
             self.semear_demonstracao(pessoas, convenios)
 
+        # Calendário: só na primeira vez (depois a coordenação mantém pela tela)
+        if not EntregaCalendario.objects.exists():
+            for dia, descricao in FERIADOS.items():
+                Feriado.objects.get_or_create(data=dia, defaults={'descricao': descricao})
+            for dia, itens in CALENDARIO.items():
+                for item in itens:
+                    nome, _, obs = item.partition('|')
+                    EntregaCalendario.objects.get_or_create(data=dia, convenio=convenio(nome), observacao=obs)
+            # Prazo do portal para os convênios que vieram do calendário
+            for nome, (texto, ini, fim) in PORTAIS.items():
+                c = convenios.get(normalizar(nome))
+                if c and not c.prazo_texto:
+                    c.prazo_texto, c.prazo_inicio, c.prazo_fim = texto, ini, fim
+                    c.save()
+
         self.stdout.write(self.style.SUCCESS(
             f'{Usuario.objects.count()} pessoas · {Convenio.objects.count()} convênios · '
-            f'{Lote.objects.count()} lotes · {EnvioXml.objects.count()} envios de XML'))
+            f'{Lote.objects.count()} lotes · {EnvioXml.objects.count()} envios de XML · '
+            f'{EntregaCalendario.objects.count()} entregas no calendário'))
 
     def semear_demonstracao(self, pessoas, convenios):
         """Lotes fictícios dos últimos 5 meses, marcados como demonstração."""

@@ -17,11 +17,12 @@ from django.db.models.deletion import ProtectedError
 from django.db.models.functions import TruncMonth, TruncYear
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 
 from .extrator import extrair_lote, ler_protocolo_xml
 from .management.commands.semear import normalizar
-from .models import Convenio, EnvioXml, Lote, Usuario
+from .models import Convenio, EntregaCalendario, EnvioXml, Feriado, Lote, Usuario
 
 
 # ---------- Utilidades ----------
@@ -808,3 +809,89 @@ def painel(request):
         'evolucao': evolucao, 'convenios': convenios_ano, 'equipe': equipe, 'status': status,
         'xmlPendentes': {'lotes': pend['n'], 'valor': float(pend['valor'] or 0)},
     })
+
+
+# ---------- Calendário de entregas ----------
+def entrega_json(e, u):
+    c = e.convenio
+    meu = u.id in (c.faturista_id, c.responsavel_xml_id)
+    return {
+        'id': e.id, 'data': iso(e.data), 'convenio_id': c.id, 'convenio': c.nome, 'observacao': e.observacao,
+        'concluido': e.concluido, 'concluido_por': e.concluido_por.nome if e.concluido_por else None,
+        'faturista_id': c.faturista_id, 'faturista': c.faturista.nome if c.faturista else None,
+        'xml_id': c.responsavel_xml_id, 'responsavel_xml': c.responsavel_xml.nome if c.responsavel_xml else None,
+        'tem_xml': c.tem_xml, 'meu': meu, 'pode_concluir': meu or u.ve_todos,
+    }
+
+
+def entregas_qs():
+    return EntregaCalendario.objects.select_related('convenio', 'convenio__faturista', 'convenio__responsavel_xml', 'concluido_por')
+
+
+@api(None, ('GET', 'POST'))
+def calendario(request):
+    u = request.user
+    if request.method == 'GET':
+        try:
+            ano, mes = map(int, (request.GET.get('mes') or hoje().strftime('%Y-%m')).split('-'))
+            inicio = date(ano, mes, 1)
+        except ValueError:
+            return erro('Mês inválido (use AAAA-MM).')
+        fim = date(ano + mes // 12, mes % 12 + 1, 1)
+        return JsonResponse({
+            'mes': inicio.isoformat()[:7], 'hoje': iso(hoje()),
+            'entregas': [entrega_json(e, u) for e in entregas_qs().filter(data__gte=inicio, data__lt=fim)],
+            'feriados': [{'data': iso(f.data), 'descricao': f.descricao} for f in Feriado.objects.filter(data__gte=inicio, data__lt=fim)],
+        })
+    if not u.pode('coordenacao'):
+        return erro('Só a coordenação muda o calendário.', 403)
+    d = request.dados
+    dia = para_data(d.get('data'))
+    c = resolver_convenio(d)
+    if not dia or not c:
+        return erro('Informe o dia e o convênio.')
+    e, criado = EntregaCalendario.objects.get_or_create(data=dia, convenio=c, observacao=str(d.get('observacao') or '').strip()[:80])
+    if not criado:
+        return erro(f'{c.nome} já está nesse dia.', 409)
+    return JsonResponse(entrega_json(entregas_qs().get(pk=e.pk), u))
+
+
+@api(None, ('PATCH', 'DELETE'))
+def entrega(request, pk):
+    e = entregas_qs().filter(pk=pk).first()
+    if not e:
+        return erro('Entrega não encontrada.', 404)
+    u = request.user
+    if request.method == 'DELETE':
+        if not u.pode('coordenacao'):
+            return erro('Só a coordenação muda o calendário.', 403)
+        e.delete()
+        return JsonResponse({'ok': True})
+    if not entrega_json(e, u)['pode_concluir']:
+        return erro('Só quem fatura ou passa o XML desse convênio (ou a gestão) marca como entregue.', 403)
+    e.concluido = bool(request.dados.get('concluido'))
+    e.concluido_por = u if e.concluido else None
+    e.concluido_em = timezone.now() if e.concluido else None
+    e.save()
+    return JsonResponse(entrega_json(e, u))
+
+
+@api(None, ('GET',))
+def calendario_proximos(request):
+    """Próximos 3 dias com entrega, a partir de hoje (regra: entregar ao setor 1 dia antes)."""
+    dias = list(EntregaCalendario.objects.filter(data__gte=hoje()).values_list('data', flat=True).distinct().order_by('data')[:3])
+    qs = entregas_qs().filter(data__in=dias)
+    return JsonResponse({'hoje': iso(hoje()), 'entregas': [entrega_json(e, request.user) for e in qs]})
+
+
+@api('coordenacao', ('POST',))
+def feriado(request):
+    d = request.dados
+    dia = para_data(d.get('data'))
+    if not dia:
+        return erro('Data inválida.')
+    if d.get('feriado'):
+        Feriado.objects.update_or_create(data=dia, defaults={'descricao': str(d.get('descricao') or 'Feriado')[:80]})
+    else:
+        Feriado.objects.filter(data=dia).delete()
+    return JsonResponse({'ok': True})

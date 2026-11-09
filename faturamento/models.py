@@ -13,10 +13,10 @@ class Usuario(AbstractUser):
 
     # Abas que cada perfil enxerga. A diretoria vê tudo.
     ABAS = {
-        'faturista': ['faturamento', 'xml'],
-        'supervisora': ['faturamento', 'xml', 'gestao'],
-        'coordenadora': ['faturamento', 'xml', 'gestao', 'coordenacao'],
-        'diretor': ['faturamento', 'xml', 'gestao', 'coordenacao', 'diretoria'],
+        'faturista': ['faturamento', 'xml', 'calendario'],
+        'supervisora': ['faturamento', 'xml', 'calendario', 'gestao'],
+        'coordenadora': ['faturamento', 'xml', 'calendario', 'gestao', 'coordenacao'],
+        'diretor': ['faturamento', 'xml', 'calendario', 'gestao', 'coordenacao', 'diretoria'],
     }
 
     @property
@@ -125,3 +125,34 @@ class EnvioXml(models.Model):
 
     def __str__(self):
         return f'XML {self.numero_lote} · {self.convenio}'
+
+
+class EntregaCalendario(models.Model):
+    """Um convênio a entregar num dia do calendário de faturamento.
+    A fatura vai para o setor pelo menos 1 dia antes (regra 2 do calendário)."""
+    data = models.DateField()
+    convenio = models.ForeignKey(Convenio, models.CASCADE, related_name='entregas')
+    observacao = models.CharField('observação', max_length=80, blank=True)  # "até as 10h", "Periódico"…
+    concluido = models.BooleanField('entregue', default=False)
+    concluido_por = models.ForeignKey(Usuario, models.SET_NULL, null=True, blank=True, related_name='+')
+    concluido_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['data', 'id']
+        verbose_name = 'entrega do calendário'
+        verbose_name_plural = 'calendário de entregas'
+        constraints = [models.UniqueConstraint(fields=['data', 'convenio', 'observacao'], name='entrega_unica_no_dia')]
+
+    def __str__(self):
+        return f'{self.data:%d/%m} · {self.convenio}'
+
+
+class Feriado(models.Model):
+    data = models.DateField(unique=True)
+    descricao = models.CharField('descrição', max_length=80, default='Feriado')
+
+    class Meta:
+        ordering = ['data']
+
+    def __str__(self):
+        return f'{self.data:%d/%m} · {self.descricao}'
