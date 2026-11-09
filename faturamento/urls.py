@@ -1,0 +1,32 @@
+from django.urls import path
+
+from . import views as v
+
+urlpatterns = [
+    path('', v.inicio, name='inicio'),
+    path('api/entrar/pessoas', v.entrar_pessoas),
+    path('api/entrar', v.entrar),
+    path('api/sair', v.sair),
+    path('api/eu', v.eu),
+    path('api/pessoas', v.pessoas),
+    path('api/usuarios', v.usuarios),
+    path('api/usuarios/<int:pk>', v.usuario),
+    path('api/convenios', v.convenios),
+    path('api/convenios/<int:pk>', v.convenio),
+    path('api/lotes', v.lotes),
+    path('api/lotes/extrair', v.lotes_extrair),
+    path('api/lotes/<int:pk>', v.lote),
+    path('api/lotes/<int:pk>/status', v.lote_status),
+    path('api/lotes/<int:pk>/pdf', v.lote_pdf),
+    path('api/demonstracao', v.apagar_demonstracao),
+    path('api/xml', v.envios_xml),
+    path('api/xml/ler', v.xml_ler),
+    path('api/xml/pendentes', v.xml_pendentes),
+    path('api/xml/resumo', v.xml_resumo),
+    path('api/xml/<int:pk>', v.envio_xml),
+    path('api/xml/<int:pk>/arquivo', v.envio_arquivo),
+    path('api/relatorios', v.relatorios),
+    path('api/relatorios/producao', v.producao),
+    path('api/relatorios/csv', v.relatorio_csv),
+    path('api/diretoria/painel', v.painel),
+]
