@@ -657,13 +657,18 @@ def xml_ler(request):
     avisos = []
     c = achar_convenio(achado['convenioNome'], achado['convenioCodigo'])
     base = Lote.objects.select_related('convenio', 'faturista')
+    # Faturista anexando no Faturamento: só procura entre os lotes dela
+    do_faturamento = request.GET.get('contexto') == 'faturamento' and not request.user.ve_todos
+    if do_faturamento:
+        base = base.filter(faturista=request.user)
     candidatos = []
     if achado['numeroLote']:
         qs = base.filter(numero_lote=achado['numeroLote'])
         candidatos = list(qs.filter(convenio=c) if c and qs.filter(convenio=c).exists() else qs)
     if not candidatos and achado['numeros']:
         # Procura no texto algum número de lote que ainda espera XML
-        candidatos = list(lotes_sem_xml(request).filter(numero_lote__in=achado['numeros'][:500])[:10])
+        sem_protocolo = (base.filter(~com_envio(), convenio__tem_xml=True) if do_faturamento else lotes_sem_xml(request))
+        candidatos = list(sem_protocolo.filter(numero_lote__in=achado['numeros'][:500])[:10])
     lote_ = candidatos[0] if len(candidatos) == 1 else None
     if lote_:
         c = lote_.convenio
@@ -671,6 +676,9 @@ def xml_ler(request):
         if ja:
             avisos.append(f'Este lote já tem XML registrado em {ja.data_envio:%d/%m/%Y} por {ja.responsavel.nome}. '
                           'Salvar registra mais um envio.')
+    elif achado['numeroLote'] and not candidatos and do_faturamento:
+        avisos.append(f'O lote {achado["numeroLote"]} não está entre os seus lançamentos. Lance o lote primeiro '
+                      '(ou confira o número). Se salvar assim, o protocolo fica esperando o lote.')
     elif achado['numeroLote'] and not candidatos:
         avisos.append('Lote ainda não lançado pelo faturamento. O protocolo fica aguardando e se amarra '
                       'sozinho quando o lote for lançado.')

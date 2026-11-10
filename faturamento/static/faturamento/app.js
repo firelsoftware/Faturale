@@ -69,7 +69,7 @@ const ICONES = {
   upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
 };
 const icone = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[n]}</svg>`;
-const NOMES_ABAS = { faturamento: 'Faturamento', xml: 'Envio de XML', calendario: 'Calendário', gestao: 'Gestão', producao: 'Produção', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
+const NOMES_ABAS = { faturamento: 'Faturamento', xml: 'Envio de XML', calendario: 'Calendário', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
 
 // ---------- Estado ----------
 const estado = { usuario: null, convenios: [], faturistas: [], aba: null };
@@ -378,6 +378,7 @@ function tabelaLotes(lotes, { gestao = false } = {}) {
       <td><span class="selo xml-${l.xml}">${XML[l.xml]}</span>${l.valor_convenio != null
         ? `<br><span class="selo devolvido" title="O protocolo do convênio veio com outro valor. Confira e corrija o lote.">Convênio: ${moeda(l.valor_convenio)}</span>` : ''}</td>
       <td><div class="acoes">
+        ${!gestao && l.xml === 'pendente' ? '<button class="btn btn-primario btn-mini" data-acao="protocolo">Anexar protocolo</button>' : ''}
         ${l.arquivo ? `<a class="btn btn-claro btn-mini" href="/api/lotes/${l.id}/pdf" target="_blank">PDF</a>` : ''}
         ${gestao && l.status !== 'conferido' ? '<button class="btn btn-claro btn-mini" data-acao="conferir">Conferir</button>' : ''}
         ${gestao && l.status !== 'devolvido' ? '<button class="btn btn-claro btn-mini" data-acao="devolver">Devolver</button>' : ''}
@@ -395,6 +396,7 @@ function ligarAcoesLotes(caixa, lotes, recarregar) {
     const acao = b.dataset.acao;
     if (acao === 'editar') editarLote(l, recarregar);
     if (acao === 'excluir') await excluirLote(l, recarregar);
+    if (acao === 'protocolo') estado.anexarProtocolo?.(l);
     if (acao === 'conferir') { await api(`/api/lotes/${l.id}/status`, { method: 'PATCH', corpo: { status: 'conferido' } }); avisar('Lote conferido.'); recarregar(); }
     if (acao === 'devolver') {
       const motivo = prompt('Motivo da devolução (aparece para o faturista):', l.observacao || '');
@@ -441,6 +443,16 @@ async function telaFaturamento() {
       <div id="revisao"></div>
     </div>
     <div class="cartao">
+      <h2>Protocolo do convênio <small class="apagado">comprovante do portal · confere o valor com o lote</small></h2>
+      <label class="solta" id="p-solta">
+        ${icone('upload')}
+        <b>Arraste aqui o protocolo do convênio</b>
+        <span>PDF, foto ou o arquivo XML · o sistema acha o seu lote pelo número e compara o valor</span>
+        <input type="file" accept=".pdf,.xml,.png,.jpg,.jpeg,application/pdf,text/xml,image/*" hidden id="p-arquivo">
+      </label>
+      <div id="p-revisao"></div>
+    </div>
+    <div class="cartao">
       <h2>Meus lotes</h2>
       <div class="filtros">
         <div class="campo"><label>Competência</label><input type="month" id="f-comp"></div>
@@ -476,6 +488,76 @@ async function telaFaturamento() {
   solta.addEventListener('dragleave', () => solta.classList.remove('arrastando'));
   solta.addEventListener('drop', (e) => { e.preventDefault(); solta.classList.remove('arrastando'); enviar(e.dataTransfer.files[0]); });
   $('#arquivo').addEventListener('change', (e) => { enviar(e.target.files[0]); e.target.value = ''; });
+
+  // Protocolo do convênio: o faturista anexa; se o valor for diferente do lote, avisa na hora
+  let loteEscolhido = null;
+  estado.anexarProtocolo = (l) => { loteEscolhido = l; $('#p-arquivo').click(); };
+  const psolta = $('#p-solta');
+  const lerProtocolo = tentar(async (arquivo) => {
+    if (!arquivo) return;
+    $('#p-revisao').innerHTML = '<div class="vazio">Lendo o protocolo…</div>';
+    const fd = new FormData();
+    fd.append('arquivo', arquivo);
+    let d;
+    try { d = await api('/api/xml/ler?contexto=faturamento', { method: 'POST', body: fd }); }
+    catch (e) { $('#p-revisao').innerHTML = ''; throw e; }
+    if (loteEscolhido && (!d.loteId || d.loteId !== loteEscolhido.id)) {
+      if (d.loteId) d.avisos.unshift(`O arquivo indica o lote ${d.numeroLote}, não o ${loteEscolhido.numero_lote} que você escolheu. Confira.`);
+      else Object.assign(d, { loteId: loteEscolhido.id, numeroLote: loteEscolhido.numero_lote, convenioId: loteEscolhido.convenio_id, avisos: [],
+        candidatos: [{ ...loteEscolhido, valor_total: loteEscolhido.valor_total }] });
+    }
+    loteEscolhido = null;
+    revisaoProtocolo(d);
+  });
+  psolta.addEventListener('dragover', (e) => { e.preventDefault(); psolta.classList.add('arrastando'); });
+  psolta.addEventListener('dragleave', () => psolta.classList.remove('arrastando'));
+  psolta.addEventListener('drop', (e) => { e.preventDefault(); psolta.classList.remove('arrastando'); lerProtocolo(e.dataTransfer.files[0]); });
+  $('#p-arquivo').addEventListener('change', (e) => { lerProtocolo(e.target.files[0]); e.target.value = ''; });
+
+  function revisaoProtocolo(d) {
+    const escolher = d.candidatos.length > 1;
+    const lote = d.candidatos.find((c) => c.id === d.loteId) || (!escolher && d.candidatos[0]);
+    const cand = (l) => `${esc(l.numero_lote)} · ${esc(l.convenio)} · ${l.valor_total != null ? moeda(l.valor_total) : ''} · lançado em ${dataBR(l.data_lancamento)}`;
+    $('#p-revisao').innerHTML = `<form style="margin-top:18px">
+      ${d.avisos.length ? `<div class="avisos">${d.avisos.map(esc).join('<br>')}</div>` : ''}
+      ${lote && !escolher ? `<div class="avisos ok">Lote encontrado: <b>${cand(lote)}</b></div>` : ''}
+      ${escolher ? `<div class="campo"><label>Mais de um lote combina. Qual é?</label>${d.candidatos.map((l, i) =>
+        `<label class="opcao"><input type="radio" name="loteId" value="${l.id}" ${i === 0 ? 'checked' : ''}> ${cand(l)}</label>`).join('')}</div>` : ''}
+      <div class="grade">
+        <div class="campo"><label>Nº do lote</label><input name="numeroLote" value="${esc(d.numeroLote)}" ${escolher ? 'disabled' : 'required'}></div>
+        <div class="campo"><label>Convênio</label><select name="convenioId" ${escolher ? 'disabled' : 'required'}><option value="">Selecione…</option>
+          ${estado.convenios.filter((c) => c.tem_xml || c.id === d.convenioId).map((c) => `<option value="${c.id}" ${c.id === d.convenioId ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></div>
+        <div class="campo"><label>Valor no protocolo do convênio (R$)</label><input name="valorProtocolo" inputmode="decimal" required value="${d.valorProtocolo != null ? valorBR(d.valorProtocolo) : ''}" placeholder="0,00"></div>
+        <div class="campo"><label>Nº do protocolo (opcional)</label><input name="protocolo" value="${esc(d.protocolo)}"></div>
+        <div class="campo"><label>Data</label><input name="dataEnvio" type="date" value="${hoje()}" required></div>
+      </div>
+      <p class="apagado" id="p-compara" style="margin:0 0 12px"></p>
+      <div class="acoes"><button type="button" class="btn btn-claro" data-cancelar>Cancelar</button><button class="btn btn-primario">Salvar protocolo</button></div></form>`;
+    const form = $('#p-revisao form');
+    // Compara na hora com o valor do lote
+    const comparar = () => {
+      const escolhido = escolher ? d.candidatos.find((c) => String(c.id) === form.loteId.value) : lote;
+      const v = lerValor(form.valorProtocolo.value || 'x');
+      const el = $('#p-compara');
+      if (!escolhido || escolhido.valor_total == null || Number.isNaN(v)) { el.textContent = ''; return; }
+      const igual = Math.abs(v - escolhido.valor_total) < 0.01;
+      el.innerHTML = igual ? `<span class="selo conferido">Valor confere com o lote (${moeda(escolhido.valor_total)})</span>`
+        : `<span class="selo devolvido">Diferente do lote: sistema ${moeda(escolhido.valor_total)} · convênio ${moeda(v)} — corrija o lote</span>`;
+    };
+    form.addEventListener('input', comparar);
+    comparar();
+    $('[data-cancelar]', form).addEventListener('click', () => { $('#p-revisao').innerHTML = ''; });
+    form.addEventListener('submit', tentar(async (e) => {
+      e.preventDefault();
+      const v = Object.fromEntries(new FormData(form));
+      const mesmo = !escolher && v.numeroLote === d.numeroLote && Number(v.convenioId) === d.convenioId;
+      const r = await api('/api/xml', { method: 'POST', corpo: { ...v, arquivoId: d.arquivoId, nomeArquivo: d.nomeArquivo, loteId: escolher ? v.loteId : mesmo ? d.loteId : null } });
+      if (r.divergente) avisar(`Protocolo salvo. O valor é diferente do lote ${r.numeroLote}: corrija o lote.`, true);
+      else avisar(r.amarrado ? `Protocolo do lote ${r.numeroLote} salvo. Valor confere.` : `Protocolo salvo. Vai amarrar quando o lote ${r.numeroLote} for lançado.`);
+      telaFaturamento(); carregarAlertas();
+    }));
+    $('#p-revisao').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
   function mostrarRevisao(d) {
     const avisos = d.avisos.length
@@ -1094,22 +1176,23 @@ const filtroCoord = { inicio: inicioMes(), fim: hoje(), competencia: '', conveni
 const ROTULOS_POR = { dia: 'Dia', mes: 'Mês', ano: 'Ano', convenio: 'Convênio', competencia: 'Competência', faturista: 'Faturista' };
 const rotuloGrupo = (por, g) => (por === 'dia' ? dataBR(g) : por === 'mes' || por === 'competencia' ? compBR(g) : g);
 
-let subCoord = 'relatorios';
-const SUBS_COORD = [['relatorios', 'Produção e relatórios'], ['convenios', 'Convênios e responsáveis'], ['divisao', 'Divisão da equipe']];
+// A mesma tela serve duas abas: "Relatórios" (produção) e "Coordenação" (convênios e divisão da equipe)
+let subCoord = 'convenios';
+const SUBS_COORD = [['convenios', 'Convênios e responsáveis'], ['divisao', 'Divisão da equipe']];
 
 async function telaCoordenacao() {
   const f = filtroCoord;
-  const soProducao = !estado.usuario.abas.includes('coordenacao');
-  if (soProducao) subCoord = 'relatorios';
+  const soProducao = estado.aba === 'producao';
+  const sub = soProducao ? 'relatorios' : subCoord;
   const cabeca = `
-    <div class="topo"><div><h1>${soProducao ? 'Produção' : 'Coordenação'}</h1><p>${soProducao ? 'Produção dos faturistas por dia, mês e ano, e relatórios por convênio, competência ou período.' : 'Produção da equipe, relatórios e quem cuida de cada convênio.'}</p></div>
-      ${subCoord === 'relatorios' ? '<div class="acoes"><button class="btn btn-claro" id="csv">Exportar planilha (CSV)</button><button class="btn btn-claro" onclick="print()">Imprimir</button></div>' : ''}</div>
+    <div class="topo"><div><h1>${soProducao ? 'Relatórios' : 'Coordenação'}</h1><p>${soProducao ? 'Produção de cada faturista por dia, mês e ano, e relatórios por convênio, competência ou período.' : 'Quem fatura e quem passa o XML de cada convênio, e a divisão da equipe.'}</p></div>
+      ${sub === 'relatorios' ? '<div class="acoes"><button class="btn btn-claro" id="csv">Exportar planilha (CSV)</button><button class="btn btn-claro" onclick="print()">Imprimir</button></div>' : ''}</div>
     <div class="subabas ${soProducao ? 'oculto' : ''}">${SUBS_COORD.map(([k, v]) => `<button data-sub="${k}" class="${subCoord === k ? 'ativa' : ''}">${v}</button>`).join('')}</div>`;
   const ligarSub = () => $('.subabas').addEventListener('click', (e) => {
     const b = e.target.closest('[data-sub]');
     if (b) { subCoord = b.dataset.sub; telaCoordenacao(); }
   });
-  if (subCoord !== 'relatorios') {
+  if (sub !== 'relatorios') {
     $('#conteudo').innerHTML = `${cabeca}<div id="csub"></div>`;
     ligarSub();
     await carregarListas();

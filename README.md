@@ -98,7 +98,7 @@ demonstração** tira os lotes fictícios. Para começar do zero, apague a pasta
 - **Prazo do portal** — três formatos: *de X a Y*, *dias X e Y* (ex.: Bradesco 9 e 27) ou *até o
   Nº dia útil* (ex.: Assefaz, desconta feriados), com hora opcional. Supervisão e coordenação mudam
   pelo Calendário (clicando no convênio em "Portais fixos") ou na Coordenação.
-- **Produção** (supervisora) — o mesmo relatório de produção da Coordenação: cada faturista por
+- **Relatórios** (supervisão, coordenação e diretoria) — aba própria: cada faturista por
   dia/mês/ano, por convênio, competência ou período, CSV e impressão.
 - **Tempo real** — a cada 10 s as telas perguntam ao servidor se algo mudou (lote lançado, conferido,
   XML enviado, entrega marcada). Produção, Coordenação, Diretoria, XML e Calendário se atualizam
@@ -106,8 +106,10 @@ demonstração** tira os lotes fictícios. Para começar do zero, apague a pasta
   no meio de um lançamento ou filtro.
 - **Telas que se adaptam** — quando a tabela não cabe (notebook com zoom, tablet, celular), cada
   linha vira um cartão, com os botões embaixo.
-- **Valor do convênio** — quem passa o XML informa (ou o sistema lê) o valor do protocolo do
-  convênio. Se for diferente do valor do lote, o faturista recebe um alerta vermelho e o lote fica
+- **Protocolo do convênio** — o faturista anexa no Faturamento (cartão "Protocolo do convênio"
+  ou botão "Anexar protocolo" no lote). O sistema acha o lote dele e compara o valor na hora.
+- **Valor do convênio** — o valor do protocolo do
+  convênio é lido do arquivo (dá para corrigir à mão). Se for diferente do valor do lote, o faturista recebe um alerta vermelho e o lote fica
   marcado "Convênio: R$ …"; quando ele corrige, o alerta some. ("XML pendente" = lote lançado, de
   convênio com XML, ainda sem protocolo de envio.)
 - **Função de cada pessoa** — no cadastro (Gestão → Usuários): Faturamento, Envio de XML ou as

@@ -25,8 +25,8 @@ class Usuario(AbstractUser):
     ABAS = {
         'faturista': ['faturamento', 'xml', 'calendario'],
         'supervisora': ['faturamento', 'xml', 'calendario', 'gestao', 'producao'],
-        'coordenadora': ['faturamento', 'xml', 'calendario', 'gestao', 'coordenacao'],
-        'diretor': ['faturamento', 'xml', 'calendario', 'gestao', 'coordenacao', 'diretoria'],
+        'coordenadora': ['faturamento', 'xml', 'calendario', 'gestao', 'producao', 'coordenacao'],
+        'diretor': ['faturamento', 'xml', 'calendario', 'gestao', 'producao', 'coordenacao', 'diretoria'],
     }
 
     @property

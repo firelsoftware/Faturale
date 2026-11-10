@@ -20,8 +20,8 @@
   const ABAS = {
     faturista: ['faturamento', 'xml', 'calendario'],
     supervisora: ['faturamento', 'xml', 'calendario', 'gestao', 'producao'],
-    coordenadora: ['faturamento', 'xml', 'calendario', 'gestao', 'coordenacao'],
-    diretor: ['faturamento', 'xml', 'calendario', 'gestao', 'coordenacao', 'diretoria'],
+    coordenadora: ['faturamento', 'xml', 'calendario', 'gestao', 'producao', 'coordenacao'],
+    diretor: ['faturamento', 'xml', 'calendario', 'gestao', 'producao', 'coordenacao', 'diretoria'],
   };
   const salvar = () => { try { localStorage.setItem(CHAVE, JSON.stringify(db)); } catch {} };
 
@@ -359,9 +359,11 @@
           d = { numeroLote: tag('numeroLote'), convenioCodigo: tag('registroANS'), convenioNome: '', protocolo: tag('numeroProtocolo'), numeros: t.match(/\b\d{4,12}\b/g) || [], tipo: 'xml', valor: soma || null };
         } else avisos.push('Na demonstração, foto (OCR) não é lida: escolha o lote abaixo ou digite o número.');
         let c = acharConvenio(d.convenioNome, d.convenioCodigo);
-        let cand = d.numeroLote ? db.lotes.filter((l) => l.numero_lote === d.numeroLote) : [];
+        const doFat = q.get('contexto') === 'faturamento' && !veTodos(u);
+        const baseL = doFat ? db.lotes.filter((l) => l.faturista_id === u.id) : db.lotes;
+        let cand = d.numeroLote ? baseL.filter((l) => l.numero_lote === d.numeroLote) : [];
         if (c && cand.some((l) => l.convenio_id === c.id)) cand = cand.filter((l) => l.convenio_id === c.id);
-        if (!cand.length && d.numeros.length) cand = lotesSemXml(q, u).filter((l) => d.numeros.includes(l.numero_lote)).slice(0, 10);
+        if (!cand.length && d.numeros.length) cand = (doFat ? baseL.filter((l) => conv(l.convenio_id).tem_xml && !temEnvio(l)) : lotesSemXml(q, u)).filter((l) => d.numeros.includes(l.numero_lote)).slice(0, 10);
         const lote = cand.length === 1 ? cand[0] : null;
         if (lote) c = conv(lote.convenio_id);
         else if (d.numeroLote && !cand.length) avisos.push('Lote ainda não lançado pelo faturamento. O protocolo fica aguardando e se amarra sozinho quando o lote for lançado.');
