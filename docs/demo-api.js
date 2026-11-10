@@ -419,7 +419,13 @@
         for (const m of db.mensagens) if (m.para === u.id && !m.lida) porPessoa[m.de] = (porPessoa[m.de] || 0) + 1;
         return [equipe, porPessoa];
       };
-      if (r1 === 'resumo') { const [e, pp] = naoLidas(); return json({ naoLidas: e + Object.values(pp).reduce((a2, b) => a2 + b, 0) }); }
+      if (r1 === 'resumo') {
+        const [e, pp] = naoLidas();
+        const pend = db.mensagens.filter((m) => m.de !== u.id && ((m.para === u.id && !m.lida) || (m.para == null && m.id > (db.lidaEquipe[u.id] || 0))));
+        const m = pend.at(-1);
+        return json({ naoLidas: e + Object.values(pp).reduce((a2, b) => a2 + b, 0),
+          ultima: m ? { ...msgJson(m), conversa: m.para == null ? 'equipe' : String(m.de), equipe: m.para == null } : null });
+      }
       if (r1 === 'conversas') {
         const [e, pp] = naoLidas();
         const ult = (com) => { const l = daConversa(com); return l.length ? msgJson(l.at(-1)) : null; };

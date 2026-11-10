@@ -1132,8 +1132,15 @@ def nao_lidas(u):
 @api()
 def mensagens_resumo(request):
     """Total de não lidas (para o número vermelho do botão)."""
-    equipe, por_pessoa = nao_lidas(request.user)
-    return JsonResponse({'naoLidas': equipe + sum(por_pessoa.values())})
+    u = request.user
+    equipe, por_pessoa = nao_lidas(u)
+    # Última mensagem que a pessoa ainda não leu (para o aviso do Windows)
+    ultima = (Mensagem.objects.select_related('autor')
+              .filter(Q(destinatario=u, lida_em__isnull=True) | Q(destinatario__isnull=True, id__gt=u.equipe_lida_ate))
+              .exclude(autor=u).order_by('-id').first())
+    return JsonResponse({'naoLidas': equipe + sum(por_pessoa.values()),
+                         'ultima': {**mensagem_json(ultima, u), 'conversa': 'equipe' if ultima.destinatario_id is None else str(ultima.autor_id),
+                                    'equipe': ultima.destinatario_id is None} if ultima else None})
 
 
 @api()

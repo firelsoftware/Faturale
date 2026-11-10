@@ -147,6 +147,8 @@ $('#sair').addEventListener('click', async () => {
   $('#ao-vivo')?.classList.add('oculto');
   mostrarBotaoChat(false);
   chat.com = null;
+  chat.avisadaAte = null;
+  document.title = tituloBase;
   vivo.versao = null;
   history.replaceState(null, '', location.pathname);
   mostrarLogin();
@@ -257,10 +259,13 @@ function montarChat() {
       <div id="chat-corpo"></div>
       <form id="chat-form" class="oculto"><textarea name="texto" rows="1" placeholder="Escreva uma mensagem…" maxlength="2000"></textarea><button class="btn btn-primario">Enviar</button></form>
     </section>`);
-  $('#chat-botao').addEventListener('click', () => (chat.aberto ? fecharChat() : abrirChat()));
+  $('#chat-botao').addEventListener('click', () => { if (podePedirAvisos()) pedirAvisos(); chat.aberto ? fecharChat() : abrirChat(); });
   $('#chat .chat-fechar').addEventListener('click', fecharChat);
   $('#chat .chat-voltar').addEventListener('click', () => listarConversas());
-  $('#chat-corpo').addEventListener('click', (e) => { const c = e.target.closest('[data-com]'); if (c) abrirConversa(c.dataset.com, c.dataset.nome); });
+  $('#chat-corpo').addEventListener('click', (e) => {
+    if (e.target.closest('[data-ativar-avisos]')) return pedirAvisos();
+    const c = e.target.closest('[data-com]'); if (c) abrirConversa(c.dataset.com, c.dataset.nome);
+  });
   const form = $('#chat-form');
   form.texto.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
   form.addEventListener('submit', tentar(async (e) => {
@@ -275,13 +280,58 @@ function montarChat() {
 function mostrarBotaoChat(sim) { montarChat(); $('#chat-botao').classList.toggle('oculto', !sim); if (!sim) fecharChat(); }
 async function contarNaoLidas() {
   if (!estado.usuario || estado.usuario.trocarSenha) return;
+  let r;
+  try { r = await api('/api/mensagens/resumo'); } catch { return; }
+  const el = $('#chat-botao .chat-conta');
+  el.textContent = r.naoLidas > 99 ? '99+' : r.naoLidas;
+  el.classList.toggle('oculto', !r.naoLidas);
+  document.title = r.naoLidas ? `(${r.naoLidas}) ${tituloBase}` : tituloBase;
+  // Mensagem nova desde a última olhada: aviso do Windows + som
+  const m = r.ultima;
+  if (chat.avisadaAte === null) { chat.avisadaAte = m ? m.id : 0; return; } // ao entrar, não avisa das antigas
+  if (!m || m.id <= chat.avisadaAte) return;
+  chat.avisadaAte = m.id;
+  const vendoEssa = chat.aberto && chat.com === m.conversa && !document.hidden;
+  if (!vendoEssa) avisarMensagem(m);
+}
+
+// ---------- Notificações ----------
+const tituloBase = document.title;
+chat.avisadaAte = null;
+function tocarSom() {
   try {
-    const r = await api('/api/mensagens/resumo');
-    const el = $('#chat-botao .chat-conta');
-    el.textContent = r.naoLidas > 99 ? '99+' : r.naoLidas;
-    el.classList.toggle('oculto', !r.naoLidas);
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [880, 1175].forEach((f, i) => {
+      const o = ctx.createOscillator(); const g = ctx.createGain();
+      o.frequency.value = f; o.type = 'sine';
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + i * 0.16);
+      g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + i * 0.16 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.16 + 0.15);
+      o.connect(g).connect(ctx.destination); o.start(ctx.currentTime + i * 0.16); o.stop(ctx.currentTime + i * 0.16 + 0.16);
+    });
   } catch {}
 }
+function avisarMensagem(m) {
+  const titulo = m.equipe ? `${m.autor} (Equipe toda)` : m.autor;
+  tocarSom();
+  if ('Notification' in window && Notification.permission === 'granted') {
+    try {
+      const n = new Notification(titulo, { body: m.texto.slice(0, 140), icon: $('link[rel=icon]')?.href, tag: `faturale-${m.conversa}` });
+      n.onclick = () => { window.focus(); abrirChat(); abrirConversa(m.conversa, m.equipe ? 'Equipe toda' : m.autor); n.close(); };
+    } catch {}
+  }
+  if (document.hidden || !('Notification' in window) || Notification.permission !== 'granted') {
+    avisar(`💬 ${titulo}: ${m.texto.slice(0, 80)}`);
+  }
+}
+function podePedirAvisos() { return 'Notification' in window && Notification.permission === 'default'; }
+async function pedirAvisos() {
+  if (!podePedirAvisos()) return;
+  try { await Notification.requestPermission(); } catch {}
+  listarConversas();
+}
+// Confere mensagens novas a cada 15 s, mesmo com a aba em segundo plano (para o aviso chegar)
+setInterval(contarNaoLidas, 15000);
 function abrirChat() { chat.aberto = true; $('#chat').classList.remove('oculto'); chat.com ? abrirConversa(chat.com, chat.nome) : listarConversas(); }
 function fecharChat() { chat.aberto = false; clearInterval(chat.timer); $('#chat')?.classList.add('oculto'); }
 const horaMsg = (iso) => {
@@ -296,7 +346,9 @@ const listarConversas = tentarChat(async () => {
   $('#chat .chat-voltar').classList.add('oculto');
   $('#chat-form').classList.add('oculto');
   const lista = await api('/api/mensagens/conversas');
-  $('#chat-corpo').innerHTML = `<ul class="chat-lista">${lista.map((c) => `<li data-com="${c.chave}" data-nome="${esc(c.nome)}">
+  const faixaAvisos = podePedirAvisos() ? '<button class="chat-avisos" data-ativar-avisos>🔔 Ativar avisos de mensagem no computador</button>'
+    : ('Notification' in window && Notification.permission === 'denied' ? '<p class="chat-avisos negado">Avisos bloqueados no navegador. Para ligar: clique no cadeado ao lado do endereço → Notificações → Permitir.</p>' : '');
+  $('#chat-corpo').innerHTML = faixaAvisos + `<ul class="chat-lista">${lista.map((c) => `<li data-com="${c.chave}" data-nome="${esc(c.nome)}">
       <span class="avatar ${c.chave === 'equipe' ? 'equipe' : ''}">${c.chave === 'equipe' ? '👥' : esc(c.nome[0])}</span>
       <div><b>${esc(c.nome)}</b><small>${c.ultima ? `${c.ultima.minha ? 'Você' : esc(c.ultima.autor.split(' ')[0])}: ${esc(c.ultima.texto.slice(0, 60))}` : (c.perfil ? PERFIS[c.perfil] : 'Recados para todo mundo')}</small></div>
       ${c.naoLidas ? `<span class="chat-conta">${c.naoLidas}</span>` : ''}</li>`).join('')}</ul>`;

@@ -408,3 +408,7 @@ body:has(.faixa-demo) #chat { bottom: 128px; height: min(520px, calc(100vh - 150
   #chat { left: 8px; right: 8px; width: auto; bottom: 76px; height: calc(100vh - 160px); }
 }
 @media print { #chat, #chat-botao { display: none !important; } }
+
+.chat-avisos { display: block; width: calc(100% - 20px); margin: 10px; padding: 9px 12px; border: 1px dashed var(--azul); border-radius: 10px;
+  background: var(--azul-suave); color: var(--navy-700); font-weight: 600; cursor: pointer; text-align: left; font-size: 13px; }
+.chat-avisos.negado { border-color: #f0dca6; background: var(--amarelo-suave); color: #6b4a00; font-weight: 500; cursor: default; }
