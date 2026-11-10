@@ -2,7 +2,7 @@
 // Simula a API do Django dentro do navegador: as telas são as mesmas do sistema.
 // Os dados ficam só neste navegador (localStorage). Nada é enviado a lugar nenhum.
 (() => {
-  const CHAVE = 'faturale-demo-v1';
+  const CHAVE = 'faturale-demo-v3';
   const fetchOriginal = window.fetch.bind(window);
   let db = null;
   const arquivos = {}; // 'lote:ID' / 'xml:ID' -> object URL (só nesta sessão)
@@ -19,7 +19,7 @@
   const novoId = (lista) => Math.max(0, ...lista.map((x) => x.id)) + 1;
   const ABAS = {
     faturista: ['faturamento', 'xml', 'calendario'],
-    supervisora: ['faturamento', 'xml', 'calendario', 'gestao'],
+    supervisora: ['faturamento', 'xml', 'calendario', 'gestao', 'producao'],
     coordenadora: ['faturamento', 'xml', 'calendario', 'gestao', 'coordenacao'],
     diretor: ['faturamento', 'xml', 'calendario', 'gestao', 'coordenacao', 'diretoria'],
   };
@@ -74,24 +74,62 @@
   const nome = (id) => pessoa(id)?.nome || null;
   const temEnvio = (l) => db.envios.some((e) => e.lote_id === l.id);
   const xmlDe = (l) => (!conv(l.convenio_id).tem_xml ? 'na' : temEnvio(l) ? 'enviado' : 'pendente');
-  const abertoHoje = (c) => !!(c.prazo_inicio && c.prazo_fim && c.prazo_inicio <= new Date().getDate() && new Date().getDate() <= c.prazo_fim);
-  const perfilJson = (u) => ({ id: u.id, nome: u.nome, login: u.login, perfil: u.perfil, abas: ABAS[u.perfil], modoDemo: true, regraGuias: 'maior' });
+  // Prazo do portal: "de X a Y", "dias X e Y", "até o Nº dia útil" (desconta feriados) ou texto livre
+  const diaUtil = (dt) => {
+    const fer = new Set(db.feriados.map((f) => f.data));
+    if (dt.getDay() % 6 === 0 || fer.has(iso(dt))) return 0;
+    let n = 0;
+    for (let d = new Date(dt.getFullYear(), dt.getMonth(), 1, 12); d <= dt; d.setDate(d.getDate() + 1)) if (d.getDay() % 6 && !fer.has(iso(d))) n++;
+    return n;
+  };
+  const abertoHoje = (c) => {
+    const agora = new Date(); const dia = agora.getDate();
+    if (c.prazo_tipo === 'dias') return (c.prazo_dias || []).includes(dia);
+    if (c.prazo_tipo === 'dia_util') { const n = diaUtil(agora); return !!(c.prazo_dia_util && n > 0 && n <= c.prazo_dia_util); }
+    if (c.prazo_tipo === 'intervalo') return !!(c.prazo_inicio && c.prazo_fim && c.prazo_inicio <= dia && dia <= c.prazo_fim);
+    return false;
+  };
+  function definirPrazo(c, p) {
+    const n = (v) => (/^\d+$/.test(String(v ?? '')) && +v >= 1 && +v <= 31 ? +v : null);
+    const dias = [...new Set((String(p.dias || '').match(/\d+/g) || []).map(Number).filter((x) => x >= 1 && x <= 31))].sort((a, b) => a - b);
+    const hora = String(p.hora || '').trim();
+    let base;
+    if (p.tipo === 'intervalo') { if (!n(p.inicio) || !n(p.fim) || +p.inicio > +p.fim) throw new Error('Informe "de" e "até" (o primeiro menor).'); base = `${p.inicio} a ${p.fim}`; }
+    else if (p.tipo === 'dias') { if (!dias.length) throw new Error('Informe os dias (ex.: 9 e 27).'); base = dias.length > 1 ? `${dias.slice(0, -1).join(', ')} e ${dias.at(-1)}` : `${dias[0]}`; }
+    else if (p.tipo === 'dia_util') { if (!n(p.dia_util)) throw new Error('Informe até qual dia útil.'); base = `até o ${p.dia_util}º dia útil`; }
+    Object.assign(c, { prazo_tipo: ['intervalo', 'dias', 'dia_util'].includes(p.tipo) ? p.tipo : 'livre',
+      prazo_inicio: p.tipo === 'intervalo' ? +p.inicio : null, prazo_fim: p.tipo === 'intervalo' ? +p.fim : null,
+      prazo_dias: p.tipo === 'dias' ? dias : [], prazo_dia_util: p.tipo === 'dia_util' ? +p.dia_util : null,
+      prazo_hora: base ? hora : '', prazo_texto: base ? (hora ? `${base}, até as ${hora}` : base) : String(p.livre || '').slice(0, 80) });
+  }
+  const fazFat = (u) => u.perfil !== 'faturista' || (u.funcao || 'ambos') !== 'xml';
+  const fazXml = (u) => u.perfil !== 'faturista' || (u.funcao || 'ambos') !== 'faturamento';
+  const abasDe = (u) => ABAS[u.perfil].filter((a) => (a !== 'faturamento' || fazFat(u)) && (a !== 'xml' || fazXml(u)));
+  const perfilJson = (u) => ({ id: u.id, nome: u.nome, login: u.login, perfil: u.perfil, abas: abasDe(u), funcao: u.funcao || 'ambos', modoDemo: true, regraGuias: 'maior' });
   const convJson = (c) => ({ ...c, faturista: nome(c.faturista_id), responsavel_xml: nome(c.xml_id), aberto_hoje: abertoHoje(c) });
+  const divergencia = (l) => {
+    const es = db.envios.filter((e) => e.lote_id === l.id && e.valor_protocolo != null).sort((a, b) => a.data_envio.localeCompare(b.data_envio) || a.id - b.id);
+    const e = es.at(-1);
+    return e && Math.abs(e.valor_protocolo - l.valor_total) >= 0.01 ? e.valor_protocolo : null;
+  };
   const loteJson = (l) => ({
     ...l, convenio: conv(l.convenio_id).nome, faturista: nome(l.faturista_id), lancado_por: nome(l.lancado_por_id),
-    arquivo: !!arquivos[`lote:${l.id}`], xml: xmlDe(l),
+    arquivo: !!arquivos[`lote:${l.id}`], xml: xmlDe(l), valor_convenio: divergencia(l),
   });
-  const candJson = (l) => ({ id: l.id, numero_lote: l.numero_lote, convenio_id: l.convenio_id, convenio: conv(l.convenio_id).nome,
-    faturista: nome(l.faturista_id), qtd_guias: l.qtd_guias, valor_total: l.valor_total, data_lancamento: l.data_lancamento, competencia: l.competencia });
+  // Guias e valor de um lote: só a própria faturista, a gestão e a coordenação veem
+  const veProducao = (u, l) => !!l && (veTodos(u) || l.faturista_id === u.id);
+  const candJson = (l, u = eu()) => ({ id: l.id, numero_lote: l.numero_lote, convenio_id: l.convenio_id, convenio: conv(l.convenio_id).nome,
+    faturista: nome(l.faturista_id), qtd_guias: veProducao(u, l) ? l.qtd_guias : null, valor_total: veProducao(u, l) ? l.valor_total : null, data_lancamento: l.data_lancamento, competencia: l.competencia });
   const envioJson = (e) => {
     const l = db.lotes.find((x) => x.id === e.lote_id);
     return { ...e, convenio: conv(e.convenio_id).nome, responsavel: nome(e.responsavel_id), arquivo: !!arquivos[`xml:${e.id}`],
-      lote_guias: l?.qtd_guias ?? null, lote_valor: l?.valor_total ?? null, faturista: l ? nome(l.faturista_id) : null };
+      divergente: !!(l && e.valor_protocolo != null && Math.abs(e.valor_protocolo - l.valor_total) >= 0.01),
+      lote_guias: veProducao(eu(), l) ? l.qtd_guias : null, lote_valor: veProducao(eu(), l) ? l.valor_total : null, faturista: l ? nome(l.faturista_id) : null };
   };
 
   function filtroLotes(q, u) {
     let ls = db.lotes;
-    if (!veTodos(u)) ls = ls.filter((l) => l.faturista_id === u.id || (q.get('meus') && l.lancado_por_id === u.id));
+    if (!veTodos(u)) ls = ls.filter((l) => l.faturista_id === u.id); // só a própria produção
     else if (q.get('faturista')) ls = ls.filter((l) => l.faturista_id === Number(q.get('faturista')));
     const f = (k, fn) => { if (q.get(k)) ls = ls.filter(fn(q.get(k))); };
     f('convenio', (v) => (l) => l.convenio_id === Number(v));
@@ -211,6 +249,7 @@
   const lotesSemXml = (q, u) => db.lotes.filter((l) => conv(l.convenio_id).tem_xml && !temEnvio(l))
     .filter((l) => (veTodos(u) ? !q.get('responsavel') || conv(l.convenio_id).xml_id === Number(q.get('responsavel')) : conv(l.convenio_id).xml_id === u.id));
   const amarrar = (l) => { let n = 0; for (const e of db.envios) if (!e.lote_id && e.numero_lote === l.numero_lote && e.convenio_id === l.convenio_id) { e.lote_id = l.id; n++; } return n; };
+  const lerValor = (v) => { if (v == null || v === '') return null; const t = String(v).trim(); const n = Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t); return Number.isFinite(n) ? Math.round(n * 100) / 100 : null; };
   function guardarPendente(file) { const t = Math.random().toString(16).slice(2) + Date.now().toString(16); pendentes[t] = file; return t; }
   function anexar(chave, token) { const f = pendentes[token]; if (f) { arquivos[chave] = URL.createObjectURL(f); delete pendentes[token]; } }
   const entregaJson = (e, u) => {
@@ -231,23 +270,25 @@
     if (r0 === 'sair') { db.usuarioAtual = null; salvar(); return json({ ok: true }); }
     const u = eu();
     if (!u) return erro('Faça login.', 401);
-    const pode = (aba) => ABAS[u.perfil].includes(aba);
+    const pode = (aba) => ABAS[u.perfil].includes(aba) || abasDe(u).includes(aba);
     if (r0 === 'eu') return json(perfilJson(u));
-    if (r0 === 'pessoas') return json(db.usuarios.filter((x) => x.ativo).map((x) => ({ id: x.id, nome: x.nome, perfil: x.perfil })).sort((a, b) => a.nome.localeCompare(b.nome)));
+    if (r0 === 'pessoas') return json(db.usuarios.filter((x) => x.ativo).map((x) => ({ id: x.id, nome: x.nome, perfil: x.perfil, funcao: x.funcao || 'ambos', fatura: fazFat(x), xml: fazXml(x) })).sort((a, b) => a.nome.localeCompare(b.nome)));
 
     if (r0 === 'usuarios') {
       if (!pode('gestao')) return erro('Sem acesso.', 403);
       if (metodo === 'GET') return json([...db.usuarios].sort((a, b) => a.nome.localeCompare(b.nome)));
       if (metodo === 'POST') {
         if (db.usuarios.some((x) => x.login === corpo.login)) return erro('Login já existe.', 409);
-        db.usuarios.push({ id: novoId(db.usuarios), nome: corpo.nome, login: String(corpo.login).toLowerCase(), perfil: corpo.perfil, ativo: true, criado_em: hoje() });
-      } else { Object.assign(pessoa(r1), { nome: corpo.nome, perfil: corpo.perfil, ativo: !!corpo.ativo }); }
+        db.usuarios.push({ id: novoId(db.usuarios), nome: corpo.nome, login: String(corpo.login).toLowerCase(), perfil: corpo.perfil, funcao: corpo.funcao || 'ambos', ativo: true, criado_em: hoje() });
+      } else { Object.assign(pessoa(r1), { nome: corpo.nome, perfil: corpo.perfil, funcao: corpo.funcao || 'ambos', ativo: !!corpo.ativo }); }
       salvar(); return json({ ok: true });
     }
 
     if (r0 === 'convenios') {
       if (metodo === 'GET') return json([...db.convenios].sort((a, b) => normalizar(a.nome).localeCompare(normalizar(b.nome))).map(convJson));
-      if (!pode('coordenacao')) return erro('Sem acesso.', 403);
+      const soPrazo = metodo === 'PUT' && Object.keys(corpo).every((k) => k === 'prazo');
+      if (soPrazo ? !pode('gestao') : !pode('coordenacao')) return erro('Só a coordenação muda isso. A supervisão pode mudar o prazo do portal.', 403);
+      if (soPrazo) { const c = conv(r1); try { definirPrazo(c, corpo.prazo); } catch (e) { return erro(e.message); } salvar(); return json(convJson(c)); }
       if (metodo === 'DELETE') {
         if (db.lotes.some((l) => l.convenio_id === Number(r1))) return erro('Esse convênio já tem lotes. Desative em vez de excluir.', 409);
         db.convenios = db.convenios.filter((c) => c.id !== Number(r1)); salvar(); return json({ ok: true });
@@ -293,6 +334,7 @@
       }
       const l = db.lotes.find((x) => x.id === Number(r1));
       if (!l) return erro('Lote não encontrado.', 404);
+      if (!veTodos(u) && l.faturista_id !== u.id) return erro('Sem acesso.', 403);
       if (r2 === 'status') { if (!pode('gestao')) return erro('Sem acesso.', 403); l.status = corpo.status; if (corpo.observacao != null) l.observacao = corpo.observacao; salvar(); return json({ ok: true }); }
       if (!veTodos(u) && l.status === 'conferido') return erro('Lote já conferido. Peça à gestão.', 403);
       if (metodo === 'DELETE') { db.lotes = db.lotes.filter((x) => x !== l); db.envios.forEach((e) => { if (e.lote_id === l.id) e.lote_id = null; }); salvar(); return json({ ok: true }); }
@@ -310,10 +352,11 @@
         const f = corpo.get('arquivo');
         let d = { numeroLote: '', convenioNome: '', convenioCodigo: '', numeros: [], tipo: 'outro' };
         const avisos = [];
-        if (/\.pdf$/i.test(f.name)) d = { ...analisar(await linhasDoPdf(await f.arrayBuffer())), tipo: 'pdf' };
+        if (/\.pdf$/i.test(f.name)) { d = { ...analisar(await linhasDoPdf(await f.arrayBuffer())), tipo: 'pdf' }; d.valor = d.valorTotal || null; }
         else if (/\.xml$/i.test(f.name)) {
           const t = await f.text(); const tag = (n) => t.match(new RegExp(`<(?:\\w+:)?${n}>\\s*([^<\\s]+)`))?.[1] || '';
-          d = { numeroLote: tag('numeroLote'), convenioCodigo: tag('registroANS'), convenioNome: '', protocolo: tag('numeroProtocolo'), numeros: t.match(/\b\d{4,12}\b/g) || [], tipo: 'xml' };
+          const soma = (t.match(/<(?:\w+:)?valorTotalGeral>\s*([\d.]+)/g) || []).reduce((s2, m) => s2 + Number(m.replace(/.*>\s*/, '')), 0);
+          d = { numeroLote: tag('numeroLote'), convenioCodigo: tag('registroANS'), convenioNome: '', protocolo: tag('numeroProtocolo'), numeros: t.match(/\b\d{4,12}\b/g) || [], tipo: 'xml', valor: soma || null };
         } else avisos.push('Na demonstração, foto (OCR) não é lida: escolha o lote abaixo ou digite o número.');
         let c = acharConvenio(d.convenioNome, d.convenioCodigo);
         let cand = d.numeroLote ? db.lotes.filter((l) => l.numero_lote === d.numeroLote) : [];
@@ -324,14 +367,14 @@
         else if (d.numeroLote && !cand.length) avisos.push('Lote ainda não lançado pelo faturamento. O protocolo fica aguardando e se amarra sozinho quando o lote for lançado.');
         else if (!cand.length && !avisos.length) avisos.push('Não achei o número do lote no arquivo. Escolha o lote na lista ou digite o número.');
         return json({ arquivoId: guardarPendente(f), nomeArquivo: f.name, tipo: d.tipo, numeroLote: lote?.numero_lote || d.numeroLote, convenioId: c?.id || null,
-          convenioNome: d.convenioNome, protocolo: d.protocolo || '', loteId: lote?.id || null, candidatos: cand.map(candJson), avisos });
+          convenioNome: d.convenioNome, protocolo: d.protocolo || '', valorProtocolo: d.valor ?? null, loteId: lote?.id || null, candidatos: cand.map(candJson), avisos });
       }
       if (r1 === 'pendentes') return json(lotesSemXml(q, u).sort((a, b) => a.data_lancamento.localeCompare(b.data_lancamento))
         .map((l) => ({ ...candJson(l), prazo_texto: conv(l.convenio_id).prazo_texto, aberto_hoje: abertoHoje(conv(l.convenio_id)), responsavel_xml: nome(conv(l.convenio_id).xml_id) })));
       const meus = () => db.envios.filter((e) => (veTodos(u) ? !q.get('responsavel') || e.responsavel_id === Number(q.get('responsavel')) : e.responsavel_id === u.id));
       if (r1 === 'resumo') {
         const pend = lotesSemXml(q, u); const mes = hoje().slice(0, 8) + '01';
-        return json({ pendentes: pend.length, pendentesValor: pend.reduce((s, l) => s + l.valor_total, 0), enviadosMes: meus().filter((e) => e.data_envio >= mes).length, aguardandoLote: meus().filter((e) => !e.lote_id).length });
+        return json({ pendentes: pend.length, pendentesValor: veTodos(u) ? pend.reduce((s, l) => s + l.valor_total, 0) : null, enviadosMes: meus().filter((e) => e.data_envio >= mes).length, aguardandoLote: meus().filter((e) => !e.lote_id).length });
       }
       if (metodo === 'GET' && !r1) {
         let es = meus();
@@ -347,15 +390,59 @@
         if (!c.tem_xml) return erro(`${c.nome} está marcado como convênio sem XML.`);
         lote ||= db.lotes.find((l) => l.numero_lote === numero && l.convenio_id === c.id) || null;
         const e = { id: novoId(db.envios), numero_lote: numero, convenio_id: c.id, lote_id: lote?.id || null, responsavel_id: veTodos(u) && corpo.responsavelId ? Number(corpo.responsavelId) : u.id,
-          protocolo: corpo.protocolo || '', data_envio: corpo.dataEnvio, nome_arquivo: corpo.nomeArquivo || '', observacao: corpo.observacao || '', demo: false };
+          protocolo: corpo.protocolo || '', data_envio: corpo.dataEnvio, nome_arquivo: corpo.nomeArquivo || '', observacao: corpo.observacao || '', demo: false,
+          valor_protocolo: lerValor(corpo.valorProtocolo) };
         db.envios.push(e); anexar(`xml:${e.id}`, corpo.arquivoId); salvar();
-        return json({ id: e.id, amarrado: !!lote, numeroLote: numero });
+        const diverge = !!(lote && e.valor_protocolo != null && Math.abs(e.valor_protocolo - lote.valor_total) >= 0.01);
+        return json({ id: e.id, amarrado: !!lote, numeroLote: numero, divergente: diverge, faturista: diverge ? nome(lote.faturista_id) : null });
       }
       const e = db.envios.find((x) => x.id === Number(r1));
       if (metodo === 'DELETE') { db.envios = db.envios.filter((x) => x !== e); salvar(); return json({ ok: true }); }
-      Object.assign(e, { numero_lote: corpo.numeroLote, convenio_id: Number(corpo.convenioId), data_envio: corpo.dataEnvio, protocolo: corpo.protocolo || '', observacao: corpo.observacao || '' });
+      Object.assign(e, { numero_lote: corpo.numeroLote, convenio_id: Number(corpo.convenioId), data_envio: corpo.dataEnvio, protocolo: corpo.protocolo || '', observacao: corpo.observacao || '', valor_protocolo: lerValor(corpo.valorProtocolo) });
       e.lote_id = db.lotes.find((l) => l.numero_lote === e.numero_lote && l.convenio_id === e.convenio_id)?.id || null;
       salvar(); return json({ ok: true, amarrado: !!e.lote_id });
+    }
+
+    if (r0 === 'versao') return json({ versao: `${db.lotes.length}:${db.envios.length}:${db.entregas.filter((e) => e.concluido).length}:${JSON.stringify(db.lotes.map((l) => l.status)).length}` });
+
+    if (r0 === 'alertas') {
+      // Último dia do portal (hoje / próximo dia útil) e próximo envio do calendário
+      const fer = new Set(db.feriados.map((f) => f.data));
+      const agora = new Date(`${hoje()}T12:00:00`);
+      const util = new Date(agora); do util.setDate(util.getDate() + 1); while (util.getDay() % 6 === 0 || fer.has(iso(util)));
+      const abertoEm = (c, dt) => {
+        if (c.prazo_tipo === 'dias') return (c.prazo_dias || []).includes(dt.getDate());
+        if (c.prazo_tipo === 'intervalo') return !!(c.prazo_inicio && c.prazo_fim && c.prazo_inicio <= dt.getDate() && dt.getDate() <= c.prazo_fim);
+        if (c.prazo_tipo === 'dia_util') { const n = diaUtil(dt); return !!(c.prazo_dia_util && n > 0 && n <= c.prazo_dia_util); }
+        return false;
+      };
+      const meus = db.convenios.filter((c) => c.ativo && c.prazo_tipo !== 'livre' && (veTodos(u) || [c.faturista_id, c.xml_id].includes(u.id)));
+      const hojeUlt = [], logoUlt = [];
+      for (const c of meus) {
+        let ultimo = null;
+        for (let dt = new Date(agora.getFullYear(), agora.getMonth(), 1, 12); dt.getMonth() === agora.getMonth(); dt.setDate(dt.getDate() + 1)) if (abertoEm(c, dt)) ultimo = iso(dt);
+        if (ultimo === hoje()) hojeUlt.push(c.nome); else if (ultimo && ultimo > hoje() && ultimo <= iso(util)) logoUlt.push(c.nome);
+      }
+      const SEM = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+      const rot = (s2) => { const dt = new Date(`${s2}T12:00:00`); return `${SEM[dt.getDay()]} ${s2.slice(8)}/${s2.slice(5, 7)}`; };
+      const amanha = addDias(hoje(), 1);
+      const lista = [];
+      if (hojeUlt.length) lista.push({ nivel: 'urgente', titulo: 'Último dia do portal hoje', itens: hojeUlt.sort() });
+      if (logoUlt.length) lista.push({ nivel: 'atencao', titulo: `Último dia do portal: ${iso(util) === amanha ? 'amanhã' : rot(iso(util))}`, itens: logoUlt.sort() });
+      const ents = db.entregas.filter((e) => e.data >= hoje() && !e.concluido && (veTodos(u) || [conv(e.convenio_id).faturista_id, conv(e.convenio_id).xml_id].includes(u.id)));
+      if (ents.length) {
+        const dia = ents.map((e) => e.data).sort()[0];
+        const itens = [...new Set(ents.filter((e) => e.data === dia).map((e) => conv(e.convenio_id).nome))].sort();
+        if (dia === hoje()) lista.push({ nivel: 'urgente', titulo: 'Envio de hoje (calendário)', itens, aba: 'calendario' });
+        else if (dia === iso(util)) lista.push({ nivel: 'atencao', titulo: `Próximo envio: ${dia === amanha ? 'amanhã' : rot(dia)} — entregue hoje ao setor`, itens, aba: 'calendario' });
+        else lista.push({ nivel: 'info', titulo: `Próximo envio: ${rot(dia)}`, itens, aba: 'calendario' });
+      }
+      const br = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const div = db.lotes.filter((l) => (veTodos(u) || l.faturista_id === u.id) && divergencia(l) != null)
+        .map((l) => `lote ${l.numero_lote} (${conv(l.convenio_id).nome}): sistema ${br(l.valor_total)} · convênio ${br(divergencia(l))}`);
+      if (div.length) lista.unshift({ nivel: 'urgente', aba: veTodos(u) ? 'gestao' : 'faturamento', itens: div,
+        titulo: veTodos(u) ? 'Lotes com valor diferente do protocolo do convênio' : 'Valor diferente do protocolo do convênio — corrija o lote' });
+      return json({ hoje: hoje(), alertas: lista });
     }
 
     if (r0 === 'calendario') {
@@ -364,7 +451,7 @@
         return json({ hoje: hoje(), entregas: db.entregas.filter((e) => dias.includes(e.data)).map((e) => entregaJson(e, u)) });
       }
       if (r1 === 'feriado') {
-        if (!pode('coordenacao')) return erro('Sem acesso.', 403);
+        if (!pode('gestao')) return erro('Sem acesso.', 403);
         db.feriados = db.feriados.filter((f) => f.data !== corpo.data);
         if (corpo.feriado) db.feriados.push({ data: corpo.data, descricao: corpo.descricao || 'Feriado' });
         salvar(); return json({ ok: true });
@@ -375,14 +462,14 @@
           feriados: db.feriados.filter((f) => f.data.startsWith(mes)) });
       }
       if (metodo === 'POST') {
-        if (!pode('coordenacao')) return erro('Só a coordenação muda o calendário.', 403);
+        if (!pode('gestao')) return erro('Só a supervisão e a coordenação mudam o calendário.', 403);
         const c = resolverConvenio(corpo); if (!c || !corpo.data) return erro('Informe o dia e o convênio.');
         if (db.entregas.some((e) => e.data === corpo.data && e.convenio_id === c.id && e.observacao === (corpo.observacao || ''))) return erro(`${c.nome} já está nesse dia.`, 409);
         const e = { id: novoId(db.entregas), data: corpo.data, convenio_id: c.id, observacao: corpo.observacao || '', concluido: false, concluido_por_id: null };
         db.entregas.push(e); salvar(); return json(entregaJson(e, u));
       }
       const e = db.entregas.find((x) => x.id === Number(r1));
-      if (metodo === 'DELETE') { if (!pode('coordenacao')) return erro('Sem acesso.', 403); db.entregas = db.entregas.filter((x) => x !== e); salvar(); return json({ ok: true }); }
+      if (metodo === 'DELETE') { if (!pode('gestao')) return erro('Sem acesso.', 403); db.entregas = db.entregas.filter((x) => x !== e); salvar(); return json({ ok: true }); }
       if (!entregaJson(e, u).pode_concluir) return erro('Só quem cuida desse convênio (ou a gestão) marca como entregue.', 403);
       e.concluido = !!corpo.concluido; e.concluido_por_id = e.concluido ? u.id : null; salvar();
       return json(entregaJson(e, u));
@@ -391,7 +478,7 @@
     if (r0 === 'relatorios') {
       const ls = filtroLotes(q, u);
       if (r1 === 'producao') {
-        if (!pode('coordenacao')) return erro('Sem acesso.', 403);
+        if (!pode('gestao')) return erro('Sem acesso.', 403);
         const por = q.get('por') || 'dia';
         const linhas = agrupar(ls, (l) => `${chaveGrupo(por, l)}|${nome(l.faturista_id)}`).map((g) => {
           const [grupo, faturista] = g.grupo.split('|'); return { grupo, faturista, lotes: g.lotes, guias: g.guias, valor: g.valor };

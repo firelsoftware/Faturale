@@ -12,9 +12,15 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import os
 from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Configurações locais (senha do banco etc.) ficam em .env, fora do Git
+load_dotenv(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -74,12 +80,34 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'data' / 'faturale.sqlite3',
+# Banco: com DATABASE_URL no .env usa o Postgres (Supabase); sem ele, o SQLite local em data/.
+DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+if '[YOUR-PASSWORD]' in DATABASE_URL or '[SENHA]' in DATABASE_URL:
+    import sys
+    print('AVISO: a senha do banco ainda não foi colocada no .env. Usando o banco local.', file=sys.stderr)
+    DATABASE_URL = ''
+if DATABASE_URL:
+    _url = urlparse(DATABASE_URL)
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': (_url.path or '/postgres').lstrip('/'),
+            'USER': unquote(_url.username or ''),
+            'PASSWORD': unquote(_url.password or ''),
+            'HOST': _url.hostname,
+            'PORT': _url.port or 5432,
+            'OPTIONS': {'sslmode': 'require'},
+            'CONN_MAX_AGE': 60,
+            'CONN_HEALTH_CHECKS': True,
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'data' / 'faturale.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -132,3 +160,6 @@ FATURALE_REGRA_GUIAS = os.environ.get('FATURALE_REGRA_GUIAS', 'maior')
 
 # Modo demonstração: entra escolhendo a pessoa, sem senha. Desligue com FATURALE_MODO_DEMO=0.
 FATURALE_MODO_DEMO = os.environ.get('FATURALE_MODO_DEMO', '1') == '1'
+
+# Senha que a pessoa recebe ao ser cadastrada ou quando a gestão redefine. Ela troca no primeiro acesso.
+FATURALE_SENHA_INICIAL = os.environ.get('FATURALE_SENHA_INICIAL', '123456')

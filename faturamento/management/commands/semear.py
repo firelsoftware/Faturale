@@ -8,6 +8,7 @@ import unicodedata
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
@@ -40,14 +41,14 @@ DIVISAO_XML = {
 # "Portais fixos" do calendário: texto, dia em que abre, dia em que fecha
 PORTAIS = {
     'Affego': ('1 à 7', 1, 7), 'Amil': ('até as 17h (dias úteis)', None, None), 'Anchieta': ('1 à 7', 1, 7),
-    'ASPDF': ('até o 5º dia útil', None, None), 'Assefaz': ('1 à 10', 1, 10), 'Benecap': ('1 à 7', 1, 7),
-    'Benefis': ('1 e 2', 1, 2), 'Bradesco Saúde': ('9 a 27', 9, 27), 'BRB': ('3 e 4', 3, 4), 'Capsesp': ('1 à 5', 1, 5),
+    'ASPDF': ('até o 5º dia útil', None, None), 'Assefaz': ('até o 5º dia útil', None, None), 'Benecap': ('1 à 7', 1, 7),
+    'Benefis': ('1 e 2', 1, 2), 'Bradesco Saúde': ('9 e 27', None, None), 'BRB': ('3 e 4', 3, 4), 'Capsesp': ('1 à 5', 1, 5),
     'Casec': ('1 e 2', 1, 2), 'Casembrapa': ('1 e 2', 1, 2), 'Cassi': ('1 à 20', 1, 20), 'Clinbrás': ('1 à 10', 1, 10),
     'Conab': ('1 à 8', 1, 8), 'E-vida': ('1 à 5', 1, 5), 'Fascal': ('1 à 10', 1, 10), 'Força Policial': ('1 à 15', 1, 15),
     'Fusex': ('diário até as 17h', None, None), 'Gama': ('1 à 6', 1, 6), 'GEAP': ('1 à 10', 1, 10),
-    'Gravia': ('primeiros 7 dias úteis', None, None), 'Grupo Santa': ('1 à 7', 1, 7), 'HFA': ('1 à 7', 1, 7),
+    'Gravia': ('até o 7º dia útil', None, None), 'Grupo Santa': ('1 à 7', 1, 7), 'HFA': ('1 à 7', 1, 7),
     'Life': ('1 à 10', 1, 10), 'Luminar': ('1 à 7', 1, 7), 'Naval': ('1 à 10', 1, 10), 'Nova Saúde': ('1 à 3', 1, 3),
-    'Omint': ('1 à 7', 1, 7), 'Plenum': ('1 à 5 úteis, até as 17h', None, None), 'Polícia Federal': ('1 à 3', 1, 3),
+    'Omint': ('1 à 7', 1, 7), 'Plenum': ('até o 5º dia útil, até as 17h', None, None), 'Polícia Federal': ('1 à 3', 1, 3),
     'Porto Seguro': ('1 à 15', 1, 15), 'Postal Saúde': ('1 à 5', 1, 5), 'Prevent Senior': ('1 à 7', 1, 7),
     'S1 Saúde': ('3 e 4', 3, 4), 'Salutá': ('1 à 7', 1, 7), 'Select': ('1 à 7 e 10 e 11', 1, 7), 'Serpro': ('1 à 15', 1, 15),
     'STF': ('1 à 21', 1, 21), 'SulAmérica': ('10 e 11', 10, 11), 'TRE': ('Isob 1 à 5 · HOB 17 à 20', 1, 5),
@@ -99,6 +100,14 @@ FATURAMENTO = {
 }
 
 
+def aplicar_prazo(c, texto):
+    """Grava o prazo do portal a partir do texto do calendário ("1 à 7", "9 e 27", "até o 5º dia útil")."""
+    from faturamento.prazos import interpretar
+    p = interpretar(texto)
+    c.definir_prazo(p['tipo'], p.get('inicio'), p.get('fim'), p.get('dias'), p.get('dia_util'), p.get('hora', ''), p.get('livre', ''))
+    c.save()
+
+
 def normalizar(s):
     s = unicodedata.normalize('NFD', s or '')
     return ''.join(c for c in s.lower() if c.isalnum())
@@ -113,7 +122,8 @@ class Command(BaseCommand):
         for nome, login, perfil in EQUIPE:
             u, criado = Usuario.objects.get_or_create(username=login, defaults={'first_name': nome, 'perfil': perfil})
             if criado:
-                u.set_unusable_password()  # demonstração: entra sem senha
+                u.set_password(settings.FATURALE_SENHA_INICIAL)  # troca no primeiro acesso
+                u.trocar_senha = True
                 u.is_staff = u.is_superuser = perfil == 'diretor'  # Leandro abre o /admin
                 u.save()
             pessoas[login] = u
@@ -143,10 +153,8 @@ class Command(BaseCommand):
                     c = convenio(nome)
                     c.faturista = pessoas[login]
                     c.save()
-            for nome, (texto, ini, fim) in PORTAIS.items():
-                c = convenio(nome)
-                c.prazo_texto, c.prazo_inicio, c.prazo_fim = texto, ini, fim
-                c.save()
+            for nome, (texto, _, _) in PORTAIS.items():
+                aplicar_prazo(convenio(nome), texto)
             self.semear_demonstracao(pessoas, convenios)
 
         # Calendário: só na primeira vez (depois a coordenação mantém pela tela)
@@ -158,11 +166,10 @@ class Command(BaseCommand):
                     nome, _, obs = item.partition('|')
                     EntregaCalendario.objects.get_or_create(data=dia, convenio=convenio(nome), observacao=obs)
             # Prazo do portal para os convênios que vieram do calendário
-            for nome, (texto, ini, fim) in PORTAIS.items():
+            for nome, (texto, _, _) in PORTAIS.items():
                 c = convenios.get(normalizar(nome))
                 if c and not c.prazo_texto:
-                    c.prazo_texto, c.prazo_inicio, c.prazo_fim = texto, ini, fim
-                    c.save()
+                    aplicar_prazo(c, texto)
 
         self.stdout.write(self.style.SUCCESS(
             f'{Usuario.objects.count()} pessoas · {Convenio.objects.count()} convênios · '

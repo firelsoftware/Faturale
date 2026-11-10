@@ -10,11 +10,21 @@ class Usuario(AbstractUser):
         DIRETOR = 'diretor', 'Diretor'
 
     perfil = models.CharField(max_length=20, choices=Perfil.choices, default=Perfil.FATURISTA)
+    # Para a equipe (perfil faturista): o que a pessoa faz. A coordenação define no cadastro.
+    class Funcao(models.TextChoices):
+        FATURAMENTO = 'faturamento', 'Faturamento'
+        XML = 'xml', 'Envio de XML'
+        AMBOS = 'ambos', 'Faturamento e XML'
+
+    funcao = models.CharField('função', max_length=12, choices=Funcao.choices, default=Funcao.AMBOS)
+
+    # Senha inicial (ou redefinida pela gestão): obriga a trocar no próximo acesso
+    trocar_senha = models.BooleanField('trocar a senha no próximo acesso', default=True)
 
     # Abas que cada perfil enxerga. A diretoria vê tudo.
     ABAS = {
         'faturista': ['faturamento', 'xml', 'calendario'],
-        'supervisora': ['faturamento', 'xml', 'calendario', 'gestao'],
+        'supervisora': ['faturamento', 'xml', 'calendario', 'gestao', 'producao'],
         'coordenadora': ['faturamento', 'xml', 'calendario', 'gestao', 'coordenacao'],
         'diretor': ['faturamento', 'xml', 'calendario', 'gestao', 'coordenacao', 'diretoria'],
     }
@@ -24,8 +34,22 @@ class Usuario(AbstractUser):
         return self.first_name or self.username
 
     @property
+    def faz_faturamento(self):
+        return self.perfil != 'faturista' or self.funcao in ('faturamento', 'ambos')
+
+    @property
+    def faz_xml(self):
+        return self.perfil != 'faturista' or self.funcao in ('xml', 'ambos')
+
+    @property
     def abas(self):
-        return self.ABAS.get(self.perfil, [])
+        abas = list(self.ABAS.get(self.perfil, []))
+        if self.perfil == 'faturista':  # quem só passa XML não vê Faturamento, e vice-versa
+            if not self.faz_faturamento:
+                abas.remove('faturamento')
+            if not self.faz_xml:
+                abas.remove('xml')
+        return abas
 
     def pode(self, aba):
         return aba in self.abas
@@ -49,9 +73,16 @@ class Convenio(models.Model):
     responsavel_xml = models.ForeignKey(Usuario, models.SET_NULL, null=True, blank=True, related_name='convenios_xml',
                                         verbose_name='quem passa o XML')
     # Portal do convênio, como está no calendário: "1 à 7", "até o 5º dia útil"…
-    prazo_texto = models.CharField('prazo do portal', max_length=80, blank=True)
+    # Prazo do portal. Ver faturamento/prazos.py: "de X a Y", "dias X e Y", "até o Nº dia útil" ou texto livre.
+    prazo_tipo = models.CharField(max_length=10, default='livre',
+                                  choices=[('intervalo', 'De … a …'), ('dias', 'Dias específicos'),
+                                           ('dia_util', 'Até o Nº dia útil'), ('livre', 'Outro (texto)')])
     prazo_inicio = models.PositiveSmallIntegerField('abre no dia', null=True, blank=True)
     prazo_fim = models.PositiveSmallIntegerField('fecha no dia', null=True, blank=True)
+    prazo_dias = models.CharField('dias específicos', max_length=80, blank=True)  # "9,27"
+    prazo_dia_util = models.PositiveSmallIntegerField('até o Nº dia útil', null=True, blank=True)
+    prazo_hora = models.CharField('até que horas', max_length=10, blank=True)  # "17h"
+    prazo_texto = models.CharField('prazo do portal', max_length=80, blank=True)  # como aparece na tela
 
     class Meta:
         ordering = ['nome']
@@ -59,6 +90,28 @@ class Convenio(models.Model):
 
     def __str__(self):
         return self.nome
+
+    @property
+    def dias_lista(self):
+        from .prazos import ler_dias
+        return ler_dias(self.prazo_dias)
+
+    def definir_prazo(self, tipo, inicio=None, fim=None, dias=None, dia_util=None, hora='', livre=''):
+        """Grava o prazo e o texto que aparece na tela."""
+        from .prazos import descrever, ler_dias
+        self.prazo_tipo = tipo if tipo in ('intervalo', 'dias', 'dia_util', 'livre') else 'livre'
+        self.prazo_inicio = inicio if self.prazo_tipo == 'intervalo' else None
+        self.prazo_fim = fim if self.prazo_tipo == 'intervalo' else None
+        lista = ler_dias(dias) if not isinstance(dias, list) else dias
+        self.prazo_dias = ','.join(map(str, lista)) if self.prazo_tipo == 'dias' else ''
+        self.prazo_dia_util = dia_util if self.prazo_tipo == 'dia_util' else None
+        self.prazo_hora = (hora or '').strip() if self.prazo_tipo != 'livre' else ''
+        self.prazo_texto = descrever(self.prazo_tipo, self.prazo_inicio, self.prazo_fim, self.dias_lista,
+                                     self.prazo_dia_util, self.prazo_hora, livre)[:80]
+
+    def aberto_em(self, dia, feriados=()):
+        from .prazos import aberto
+        return aberto(self.prazo_tipo, dia, self.prazo_inicio, self.prazo_fim, self.dias_lista, self.prazo_dia_util, feriados)
 
 
 class Lote(models.Model):
@@ -113,6 +166,8 @@ class EnvioXml(models.Model):
     data_envio = models.DateField()
     arquivo = models.FileField(upload_to='xml/', blank=True)
     nome_arquivo = models.CharField(max_length=200, blank=True)
+    # Valor que está no protocolo do convênio. Se for diferente do valor do lote, o faturista é avisado.
+    valor_protocolo = models.DecimalField('valor no protocolo do convênio', max_digits=14, decimal_places=2, null=True, blank=True)
     observacao = models.TextField(blank=True)
     demo = models.BooleanField(default=False)
     criado_em = models.DateTimeField(auto_now_add=True)

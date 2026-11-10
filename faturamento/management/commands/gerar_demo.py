@@ -47,11 +47,12 @@ class Command(BaseCommand):
         lotes = Lote.objects.filter(demo=True)
         dados = {
             'exportadoEm': date.today().isoformat(),
-            'usuarios': [{'id': u.id, 'nome': u.nome, 'login': u.username, 'perfil': u.perfil, 'ativo': u.is_active,
+            'usuarios': [{'id': u.id, 'nome': u.nome, 'login': u.username, 'perfil': u.perfil, 'ativo': u.is_active, 'funcao': u.funcao,
                           'criado_em': u.date_joined.date().isoformat()} for u in Usuario.objects.order_by('id')],
             'convenios': [{'id': c.id, 'nome': c.nome, 'codigo': c.codigo, 'ativo': c.ativo, 'tem_xml': c.tem_xml,
                            'faturista_id': c.faturista_id, 'xml_id': c.responsavel_xml_id, 'prazo_texto': c.prazo_texto,
-                           'prazo_inicio': c.prazo_inicio, 'prazo_fim': c.prazo_fim} for c in Convenio.objects.all()],
+                           'prazo_inicio': c.prazo_inicio, 'prazo_fim': c.prazo_fim, 'prazo_tipo': c.prazo_tipo,
+                           'prazo_dias': c.dias_lista, 'prazo_dia_util': c.prazo_dia_util, 'prazo_hora': c.prazo_hora} for c in Convenio.objects.all()],
             'lotes': [{'id': l.id, 'numero_lote': l.numero_lote, 'convenio_id': l.convenio_id, 'faturista_id': l.faturista_id,
                        'lancado_por_id': l.lancado_por_id, 'gerado_por': l.gerado_por, 'qtd_guias': l.qtd_guias,
                        'guias_texto': l.guias_texto, 'valor_total': float(l.valor_total), 'competencia': l.competencia,
@@ -60,7 +61,8 @@ class Command(BaseCommand):
                        'data_lancamento': iso(l.data_lancamento), 'demo': True} for l in lotes],
             'envios': [{'id': e.id, 'numero_lote': e.numero_lote, 'convenio_id': e.convenio_id, 'lote_id': e.lote_id,
                         'responsavel_id': e.responsavel_id, 'protocolo': e.protocolo, 'data_envio': iso(e.data_envio),
-                        'nome_arquivo': e.nome_arquivo, 'observacao': e.observacao, 'demo': True}
+                        'nome_arquivo': e.nome_arquivo, 'observacao': e.observacao, 'demo': True,
+                        'valor_protocolo': float(e.valor_protocolo) if e.valor_protocolo is not None else None}
                        for e in EnvioXml.objects.filter(demo=True, lote__demo=True)],
             'entregas': [{'id': e.id, 'data': iso(e.data), 'convenio_id': e.convenio_id, 'observacao': e.observacao,
                           'concluido': False, 'concluido_por_id': None} for e in EntregaCalendario.objects.all()],

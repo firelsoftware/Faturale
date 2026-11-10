@@ -209,7 +209,7 @@ def ler_protocolo_xml(dados: bytes, nome_arquivo: str) -> dict:
     """Lê o protocolo que o pessoal do XML anexa. Pode ser o próprio PDF do lote,
     o comprovante do portal (PDF) ou o arquivo XML do TISS.
     Devolve o que achou + todos os números do texto, para procurar o lote."""
-    achado = {'tipo': 'outro', 'numeroLote': '', 'convenioNome': '', 'convenioCodigo': '', 'protocolo': '', 'numeros': []}
+    achado = {'tipo': 'outro', 'numeroLote': '', 'convenioNome': '', 'convenioCodigo': '', 'protocolo': '', 'numeros': [], 'valor': None}
     texto = ''
     ehimagem = nome_arquivo.lower().endswith(('.png', '.jpg', '.jpeg'))
     if dados[:5] == b'%PDF-' or ehimagem:
@@ -221,10 +221,39 @@ def ler_protocolo_xml(dados: bytes, nome_arquivo: str) -> dict:
         m = re.search(r'protocolo\s*(?:n[º°o.]*|de envio|do portal)?\s*[:\-]?\s*(\d{4,})', texto, re.I)
         if m and m.group(1) != d['numeroLote']:
             achado['protocolo'] = m.group(1)
+        achado['valor'] = valor_do_texto(linhas, d['valorTotal'])
     elif nome_arquivo.lower().endswith('.xml') or dados.lstrip()[:1] == b'<':
         achado['tipo'] = 'xml'
         texto = dados.decode('utf-8', errors='ignore')
         tag = lambda nome: (re.search(rf'<(?:\w+:)?{nome}>\s*([^<\s]+)', texto) or [None, ''])[1]
         achado.update(numeroLote=tag('numeroLote'), protocolo=tag('numeroProtocolo'), convenioCodigo=tag('registroANS'))
+        achado['valor'] = valor_do_xml(texto)
     achado['numeros'] = sorted(set(re.findall(r'\b\d{4,12}\b', texto)))
     return achado
+
+
+def valor_do_texto(linhas, valor_total_protocolo=0):
+    """Valor total do protocolo do convênio (PDF/foto). Ordem de preferência:
+    linha "Total do protocolo"; linha com "valor total"/"total geral"/"total"; maior valor do documento."""
+    if valor_total_protocolo:
+        return float(valor_total_protocolo)
+    for padrao in (r'valor\s+total|total\s+geral|valor\s+do\s+lote|valor\s+apresentado', r'\btotal\b'):
+        for l in reversed(linhas):
+            if re.search(padrao, l, re.I):
+                vals = [para_decimal(v) for v in DINHEIRO.findall(l)]
+                if vals:
+                    return float(max(vals))
+    todos = [para_decimal(v) for l in linhas for v in DINHEIRO.findall(l)]
+    return float(max(todos)) if todos else None
+
+
+def valor_do_xml(texto):
+    """XML do TISS: soma dos valorTotalGeral das guias (ou o valor total do lote, se houver)."""
+    def numeros(tag):
+        return [Decimal(v) for v in re.findall(rf'<(?:\w+:)?{tag}>\s*([\d.]+)\s*<', texto)]
+    for tag in ('valorTotalLote', 'valorTotalProtocolo'):
+        v = numeros(tag)
+        if v:
+            return float(v[0])
+    v = numeros('valorTotalGeral')
+    return float(sum(v)) if v else None

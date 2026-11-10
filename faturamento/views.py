@@ -3,13 +3,13 @@ import json
 import re
 import secrets
 import time
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from functools import wraps
 from pathlib import Path
 
 from django.conf import settings
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.core.files import File
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Exists, F, OuterRef, Q, Sum
@@ -30,8 +30,9 @@ def erro(msg, status=400):
     return JsonResponse({'erro': msg}, status=status)
 
 
-def api(aba=None, metodos=('GET',)):
-    """Exige login (e a aba, se houver), confere o método e lê o corpo JSON em request.dados."""
+def api(aba=None, metodos=('GET',), com_senha_provisoria=False):
+    """Exige login (e a aba, se houver), confere o método e lê o corpo JSON em request.dados.
+    Quem está com a senha inicial só usa o que serve para trocá-la."""
     def deco(fn):
         @wraps(fn)
         def inner(request, *a, **kw):
@@ -39,6 +40,8 @@ def api(aba=None, metodos=('GET',)):
                 return erro('Método não permitido.', 405)
             if not request.user.is_authenticated or not request.user.is_active:
                 return erro('Faça login.', 401)
+            if precisa_trocar(request.user) and not com_senha_provisoria:
+                return JsonResponse({'erro': 'Troque sua senha para continuar.', 'trocarSenha': True}, status=428)
             if aba and not request.user.pode(aba):
                 return erro('Sem acesso.', 403)
             request.dados = {}
@@ -50,6 +53,10 @@ def api(aba=None, metodos=('GET',)):
             return fn(request, *a, **kw)
         return inner
     return deco
+
+
+def precisa_trocar(u):
+    return u.trocar_senha and not settings.FATURALE_MODO_DEMO
 
 
 def iso(d):
@@ -104,16 +111,16 @@ def inicio(request):
 
 def perfil_json(u):
     return {'id': u.id, 'nome': u.nome, 'login': u.username, 'perfil': u.perfil, 'abas': u.abas,
-            'modoDemo': settings.FATURALE_MODO_DEMO, 'regraGuias': settings.FATURALE_REGRA_GUIAS}
+            'modoDemo': settings.FATURALE_MODO_DEMO, 'regraGuias': settings.FATURALE_REGRA_GUIAS,
+            'trocarSenha': precisa_trocar(u), 'funcao': u.funcao}
 
 
 # ---------- Entrar / sair ----------
 def entrar_pessoas(request):
-    """Lista quem pode entrar sem senha (só no modo demonstração)."""
-    if not settings.FATURALE_MODO_DEMO:
-        return JsonResponse([], safe=False)
+    """Quem aparece na tela de entrada. Fora do modo demonstração, clicar na pessoa pede a senha."""
     pessoas = Usuario.objects.filter(is_active=True).order_by('id')
-    return JsonResponse([{'nome': u.nome, 'login': u.username, 'perfil': u.perfil} for u in pessoas], safe=False)
+    sem_senha = settings.FATURALE_MODO_DEMO
+    return JsonResponse([{'nome': u.nome, 'login': u.username, 'perfil': u.perfil, 'semSenha': sem_senha} for u in pessoas], safe=False)
 
 
 def entrar(request):
@@ -135,21 +142,42 @@ def sair(request):
     return JsonResponse({'ok': True})
 
 
-@api()
+@api(com_senha_provisoria=True)
 def eu(request):
     return JsonResponse(perfil_json(request.user))
+
+
+@api(None, ('POST',), com_senha_provisoria=True)
+def trocar_senha(request):
+    """Troca a própria senha. Obrigatório no primeiro acesso (senha inicial)."""
+    u, d = request.user, request.dados
+    atual, nova = str(d.get('atual') or ''), str(d.get('nova') or '')
+    if not u.check_password(atual):
+        return erro('A senha atual não confere.')
+    if len(nova) < 6:
+        return erro('A senha nova precisa de pelo menos 6 caracteres.')
+    if nova == atual or nova == settings.FATURALE_SENHA_INICIAL:
+        return erro('Escolha uma senha diferente da atual e da senha inicial.')
+    if nova != str(d.get('confirmacao') or ''):
+        return erro('A confirmação não é igual à senha nova.')
+    u.set_password(nova)
+    u.trocar_senha = False
+    u.save()
+    update_session_auth_hash(request, u)
+    return JsonResponse(perfil_json(u))
 
 
 # ---------- Pessoas ----------
 @api()
 def pessoas(request):
     qs = Usuario.objects.filter(is_active=True).order_by('first_name')
-    return JsonResponse([{'id': u.id, 'nome': u.nome, 'perfil': u.perfil} for u in qs], safe=False)
+    return JsonResponse([{'id': u.id, 'nome': u.nome, 'perfil': u.perfil, 'funcao': u.funcao,
+                          'fatura': u.faz_faturamento, 'xml': u.faz_xml} for u in qs], safe=False)
 
 
 def usuario_json(u):
     return {'id': u.id, 'nome': u.nome, 'login': u.username, 'perfil': u.perfil, 'ativo': u.is_active,
-            'criado_em': u.date_joined.date().isoformat()}
+            'criado_em': u.date_joined.date().isoformat(), 'trocar_senha': u.trocar_senha, 'funcao': u.funcao}
 
 
 def perfis_que_pode_criar(u):
@@ -168,8 +196,9 @@ def usuarios(request):
         return erro('Preencha nome e login (letras minúsculas, números, ponto).')
     if Usuario.objects.filter(username=login_).exists():
         return erro('Login já existe.', 409)
-    u = Usuario(username=login_, first_name=nome, perfil=d['perfil'])
-    u.set_password(d['senha']) if d.get('senha') else u.set_unusable_password()
+    funcao = d.get('funcao') if d.get('funcao') in ('faturamento', 'xml', 'ambos') else 'ambos'
+    u = Usuario(username=login_, first_name=nome, perfil=d['perfil'], trocar_senha=True, funcao=funcao)
+    u.set_password(settings.FATURALE_SENHA_INICIAL)  # a pessoa troca no primeiro acesso
     u.save()
     return JsonResponse({'id': u.id})
 
@@ -187,25 +216,64 @@ def usuario(request, pk):
         return erro('Você não pode desativar a si mesmo.')
     alvo.first_name = str(d.get('nome', alvo.first_name)).strip()
     alvo.perfil = d['perfil']
+    if d.get('funcao') in ('faturamento', 'xml', 'ambos'):
+        alvo.funcao = d['funcao']
     alvo.is_active = bool(d.get('ativo'))
-    if d.get('senha'):
-        alvo.set_password(d['senha'])
+    if d.get('redefinir'):
+        alvo.set_password(settings.FATURALE_SENHA_INICIAL)
+        alvo.trocar_senha = True
     alvo.save()
+    if d.get('redefinir') and alvo != request.user:
+        from django.contrib.sessions.models import Session
+        for sess in Session.objects.all():  # derruba o acesso aberto dessa pessoa
+            if str(sess.get_decoded().get('_auth_user_id')) == str(alvo.id):
+                sess.delete()
     return JsonResponse({'ok': True})
 
 
 # ---------- Convênios ----------
-def aberto_hoje(c):
-    return bool(c.prazo_inicio and c.prazo_fim and c.prazo_inicio <= hoje().day <= c.prazo_fim)
+def feriados_do_mes(dia=None):
+    dia = dia or hoje()
+    return set(Feriado.objects.filter(data__year=dia.year, data__month=dia.month).values_list('data', flat=True))
 
 
-def convenio_json(c):
+def aberto_hoje(c, feriados=None):
+    return c.aberto_em(hoje(), feriados_do_mes() if feriados is None else feriados)
+
+
+def convenio_json(c, feriados=None):
     return {
         'id': c.id, 'nome': c.nome, 'codigo': c.codigo, 'ativo': c.ativo, 'tem_xml': c.tem_xml,
         'faturista_id': c.faturista_id, 'faturista': c.faturista.nome if c.faturista else None,
         'xml_id': c.responsavel_xml_id, 'responsavel_xml': c.responsavel_xml.nome if c.responsavel_xml else None,
-        'prazo_texto': c.prazo_texto, 'prazo_inicio': c.prazo_inicio, 'prazo_fim': c.prazo_fim, 'aberto_hoje': aberto_hoje(c),
+        'prazo_texto': c.prazo_texto, 'prazo_tipo': c.prazo_tipo, 'prazo_inicio': c.prazo_inicio, 'prazo_fim': c.prazo_fim,
+        'prazo_dias': c.dias_lista, 'prazo_dia_util': c.prazo_dia_util, 'prazo_hora': c.prazo_hora,
+        'aberto_hoje': aberto_hoje(c, feriados),
     }
+
+
+def aplicar_prazo(c, p):
+    """p = {tipo, inicio, fim, dias, dia_util, hora, livre}, vindo da janela "Editar prazo"."""
+    from .prazos import ler_dias
+    tipo = p.get('tipo')
+    dia = lambda v: int(v) if str(v or '').isdigit() and 1 <= int(v) <= 31 else None
+    if tipo == 'intervalo':
+        ini, fim = dia(p.get('inicio')), dia(p.get('fim'))
+        if not ini or not fim or ini > fim:
+            raise ValueError('Informe "de" e "até" (dias de 1 a 31, o primeiro menor).')
+        c.definir_prazo('intervalo', inicio=ini, fim=fim, hora=p.get('hora', ''))
+    elif tipo == 'dias':
+        dias = ler_dias(p.get('dias'))
+        if not dias:
+            raise ValueError('Informe os dias (ex.: 9 e 27).')
+        c.definir_prazo('dias', dias=dias, hora=p.get('hora', ''))
+    elif tipo == 'dia_util':
+        n = dia(p.get('dia_util'))
+        if not n or n > 23:
+            raise ValueError('Informe até qual dia útil (1 a 23).')
+        c.definir_prazo('dia_util', dia_util=n, hora=p.get('hora', ''))
+    else:
+        c.definir_prazo('livre', livre=str(p.get('livre') or '')[:80])
 
 
 def aplicar_convenio(c, d):
@@ -223,24 +291,16 @@ def aplicar_convenio(c, d):
         c.faturista_id = d['faturista_id'] or None
     if 'xml_id' in d:
         c.responsavel_xml_id = d['xml_id'] or None
-    if 'prazo_texto' in d:
-        c.prazo_texto = str(d['prazo_texto'] or '').strip()
-    for campo in ('prazo_inicio', 'prazo_fim'):
-        if campo in d:
-            v = d[campo]
-            if v in (None, ''):
-                setattr(c, campo, None)
-            elif str(v).isdigit() and 1 <= int(v) <= 31:
-                setattr(c, campo, int(v))
-            else:
-                raise ValueError('Dia do prazo deve ser de 1 a 31.')
+    if isinstance(d.get('prazo'), dict):
+        aplicar_prazo(c, d['prazo'])
 
 
 @api(None, ('GET', 'POST'))
 def convenios(request):
     if request.method == 'GET':
         qs = sorted(Convenio.objects.select_related('faturista', 'responsavel_xml'), key=lambda c: normalizar(c.nome))
-        return JsonResponse([convenio_json(c) for c in qs], safe=False)
+        feriados = feriados_do_mes()
+        return JsonResponse([convenio_json(c, feriados) for c in qs], safe=False)
     if not request.user.pode('coordenacao'):
         return erro('Sem acesso.', 403)
     c = Convenio()
@@ -254,11 +314,15 @@ def convenios(request):
     return JsonResponse(convenio_json(c))
 
 
-@api('coordenacao', ('PUT', 'DELETE'))
+@api('gestao', ('PUT', 'DELETE'))
 def convenio(request, pk):
     c = Convenio.objects.filter(pk=pk).first()
     if not c:
         return erro('Não encontrado.', 404)
+    # Supervisão e coordenação mudam o prazo do portal; o resto do convênio é com a coordenação.
+    so_prazo = request.method == 'PUT' and set(request.dados) <= {'prazo'}
+    if not so_prazo and not request.user.pode('coordenacao'):
+        return erro('Só a coordenação muda isso. A supervisão pode mudar o prazo do portal.', 403)
     if request.method == 'DELETE':
         try:
             c.delete()
@@ -286,7 +350,7 @@ def filtro_lotes(request):
     qs = Lote.objects.select_related('convenio', 'faturista', 'lancado_por')
     if not u.ve_todos:
         # A faturista vê a própria produção; ?meus=1 inclui o que ela lançou para outra pessoa
-        qs = qs.filter(Q(faturista=u) | Q(lancado_por=u)) if q.get('meus') else qs.filter(faturista=u)
+        qs = qs.filter(faturista=u)  # só a própria produção
     elif q.get('faturista'):
         qs = qs.filter(faturista_id=q['faturista'])
     if q.get('convenio'):
@@ -311,6 +375,15 @@ def filtro_lotes(request):
     return qs
 
 
+def divergencia(lote):
+    """Valor do protocolo do convênio quando é diferente do valor do lote (último envio com valor). Senão None."""
+    envios = [e for e in lote.envios_xml.all() if e.valor_protocolo is not None]
+    if not envios:
+        return None
+    e = max(envios, key=lambda x: (x.data_envio, x.id))
+    return e.valor_protocolo if abs(e.valor_protocolo - lote.valor_total) >= Decimal('0.01') else None
+
+
 def lote_json(l):
     if not l.convenio.tem_xml:
         xml = 'na'
@@ -324,6 +397,7 @@ def lote_json(l):
         'prestador': l.prestador, 'status': l.status, 'observacao': l.observacao, 'arquivo': bool(l.arquivo),
         'data_lancamento': iso(l.data_lancamento), 'demo': l.demo, 'xml': xml,
         'gerado_por': l.gerado_por, 'lancado_por': l.lancado_por.nome if l.lancado_por else None,
+        'valor_convenio': float(v) if (v := divergencia(l)) is not None else None,
     }
 
 
@@ -429,7 +503,7 @@ def preencher_lote(l, d):
 @api(None, ('GET', 'POST'))
 def lotes(request):
     if request.method == 'GET':
-        qs = filtro_lotes(request).annotate(tem_envio=com_envio()).order_by('-data_lancamento', '-id')[:1000]
+        qs = filtro_lotes(request).annotate(tem_envio=com_envio()).prefetch_related('envios_xml').order_by('-data_lancamento', '-id')[:1000]
         return JsonResponse([lote_json(l) for l in qs], safe=False)
     d, u = request.dados, request.user
     if msg := validar_lote(d):
@@ -456,7 +530,7 @@ def lote_do_usuario(request, pk):
     l = Lote.objects.select_related('convenio').filter(pk=pk).first()
     if not l:
         return None, erro('Lote não encontrado.', 404)
-    if not request.user.ve_todos and request.user.id not in (l.faturista_id, l.lancado_por_id):
+    if not request.user.ve_todos and l.faturista_id != request.user.id:
         return None, erro('Sem acesso.', 403)
     return l, None
 
@@ -526,15 +600,24 @@ def apagar_demonstracao(request):
 
 
 # ---------- XML ----------
-def envio_json(e):
+def ve_producao(u, lote):
+    """Guias e valor de um lote: só a própria faturista, a gestão e a coordenação veem.
+    Quem passa o XML de um convênio enxerga o número do lote, mas não a produção de outra pessoa."""
+    return bool(lote) and (u.ve_todos or lote.faturista_id == u.id)
+
+
+def envio_json(e, u):
+    mostra = ve_producao(u, e.lote)
     return {
         'id': e.id, 'numero_lote': e.numero_lote, 'convenio_id': e.convenio_id, 'convenio': e.convenio.nome,
-        'lote_id': e.lote_id, 'lote_guias': e.lote.qtd_guias if e.lote else None,
-        'lote_valor': float(e.lote.valor_total) if e.lote else None,
+        'lote_id': e.lote_id, 'lote_guias': e.lote.qtd_guias if mostra else None,
+        'lote_valor': float(e.lote.valor_total) if mostra else None,
         'faturista': e.lote.faturista.nome if e.lote else None,
         'responsavel_id': e.responsavel_id, 'responsavel': e.responsavel.nome, 'protocolo': e.protocolo,
         'data_envio': iso(e.data_envio), 'arquivo': bool(e.arquivo), 'nome_arquivo': e.nome_arquivo,
         'observacao': e.observacao, 'demo': e.demo,
+        'valor_protocolo': float(e.valor_protocolo) if e.valor_protocolo is not None else None,
+        'divergente': bool(e.lote and e.valor_protocolo is not None and abs(e.valor_protocolo - e.lote.valor_total) >= Decimal('0.01')),
     }
 
 
@@ -551,9 +634,11 @@ def lotes_sem_xml(request):
     return qs
 
 
-def candidato_json(l):
+def candidato_json(l, u):
+    mostra = ve_producao(u, l)
     return {'id': l.id, 'numero_lote': l.numero_lote, 'convenio_id': l.convenio_id, 'convenio': l.convenio.nome,
-            'faturista': l.faturista.nome, 'qtd_guias': l.qtd_guias, 'valor_total': float(l.valor_total),
+            'faturista': l.faturista.nome, 'qtd_guias': l.qtd_guias if mostra else None,
+            'valor_total': float(l.valor_total) if mostra else None,
             'data_lancamento': iso(l.data_lancamento), 'competencia': l.competencia}
 
 
@@ -595,8 +680,8 @@ def xml_ler(request):
         'arquivoId': token, 'nomeArquivo': arquivo.name, 'tipo': achado['tipo'],
         'numeroLote': lote_.numero_lote if lote_ else achado['numeroLote'],
         'convenioId': c.id if c else None, 'convenioNome': achado['convenioNome'],
-        'protocolo': achado['protocolo'], 'loteId': lote_.id if lote_ else None,
-        'candidatos': [candidato_json(l) for l in candidatos[:10]], 'avisos': avisos,
+        'protocolo': achado['protocolo'], 'loteId': lote_.id if lote_ else None, 'valorProtocolo': achado.get('valor'),
+        'candidatos': [candidato_json(l, request.user) for l in candidatos[:10]], 'avisos': avisos,
     })
 
 
@@ -622,10 +707,24 @@ def filtro_envios(request):
     return qs
 
 
+
+def ler_valor(v):
+    """'2.327,79' / '2327.79' / 2327.79 → Decimal; vazio → None."""
+    if v in (None, ''):
+        return None
+    t = str(v).strip()
+    if ',' in t:
+        t = t.replace('.', '').replace(',', '.')
+    try:
+        return Decimal(t).quantize(Decimal('0.01'))
+    except InvalidOperation:
+        raise ValueError('Valor do protocolo inválido.')
+
+
 @api(None, ('GET', 'POST'))
 def envios_xml(request):
     if request.method == 'GET':
-        return JsonResponse([envio_json(e) for e in filtro_envios(request)[:1000]], safe=False)
+        return JsonResponse([envio_json(e, request.user) for e in filtro_envios(request)[:1000]], safe=False)
     d, u = request.dados, request.user
     data_envio = para_data(d.get('dataEnvio'))
     if not data_envio:
@@ -643,14 +742,21 @@ def envios_xml(request):
         lote_ = Lote.objects.filter(numero_lote=numero, convenio=conv).first()
     if not conv.tem_xml:
         return erro(f'{conv.nome} está marcado como convênio sem XML. Peça à coordenação para mudar.')
+    try:
+        valor_protocolo = ler_valor(d.get('valorProtocolo'))
+    except ValueError as ex:
+        return erro(str(ex))
     e = EnvioXml.objects.create(
         numero_lote=numero, convenio=conv, lote=lote_,
         responsavel_id=d.get('responsavelId') if u.ve_todos and d.get('responsavelId') else u.id,
         protocolo=str(d.get('protocolo') or '').strip(), data_envio=data_envio,
-        observacao=d.get('observacao') or '', nome_arquivo=str(d.get('nomeArquivo') or '')[:200])
+        observacao=d.get('observacao') or '', nome_arquivo=str(d.get('nomeArquivo') or '')[:200],
+        valor_protocolo=valor_protocolo)
     if caminho := pegar_pendente(d.get('arquivoId')):
         anexar(e.arquivo, f'xml-{e.id}{caminho.suffix}', caminho)
-    return JsonResponse({'id': e.id, 'amarrado': bool(lote_), 'numeroLote': numero})
+    diverge = bool(lote_ and valor_protocolo is not None and abs(valor_protocolo - lote_.valor_total) >= Decimal('0.01'))
+    return JsonResponse({'id': e.id, 'amarrado': bool(lote_), 'numeroLote': numero, 'divergente': diverge,
+                         'faturista': lote_.faturista.nome if diverge else None})
 
 
 def envio_do_usuario(request, pk):
@@ -680,6 +786,11 @@ def envio_xml(request, pk):
         return erro('Preencha lote, convênio e data do envio.')
     e.numero_lote, e.convenio, e.data_envio = numero, conv, data_envio
     e.protocolo = str(d.get('protocolo') or '').strip()
+    if 'valorProtocolo' in d:
+        try:
+            e.valor_protocolo = ler_valor(d.get('valorProtocolo'))
+        except ValueError as ex:
+            return erro(str(ex))
     e.observacao = d.get('observacao') or ''
     e.lote = Lote.objects.filter(numero_lote=numero, convenio=conv).first()  # reamarra se o lote mudou
     e.save()
@@ -699,8 +810,9 @@ def envio_arquivo(request, pk):
 @api()
 def xml_pendentes(request):
     qs = lotes_sem_xml(request).order_by('data_lancamento', 'id')
-    return JsonResponse([{**candidato_json(l), 'prazo_texto': l.convenio.prazo_texto,
-                          'aberto_hoje': aberto_hoje(l.convenio),
+    feriados = feriados_do_mes()
+    return JsonResponse([{**candidato_json(l, request.user), 'prazo_texto': l.convenio.prazo_texto,
+                          'aberto_hoje': aberto_hoje(l.convenio, feriados),
                           'responsavel_xml': l.convenio.responsavel_xml.nome if l.convenio.responsavel_xml else None}
                          for l in qs[:500]], safe=False)
 
@@ -711,7 +823,7 @@ def xml_resumo(request):
     mes = hoje().replace(day=1)
     pend = lotes_sem_xml(request).aggregate(n=Count('id'), valor=Sum('valor_total'))
     return JsonResponse({
-        'pendentes': pend['n'], 'pendentesValor': float(pend['valor'] or 0),
+        'pendentes': pend['n'], 'pendentesValor': float(pend['valor'] or 0) if request.user.ve_todos else None,
         'enviadosMes': envios.filter(data_envio__gte=mes).count(),
         'aguardandoLote': envios.filter(lote__isnull=True).count(),
     })
@@ -754,7 +866,7 @@ def relatorios(request):
     return JsonResponse({'por': por, 'totais': totais(qs), 'linhas': linhas})
 
 
-@api('coordenacao')
+@api('gestao')
 def producao(request):
     """Produção de cada faturista por dia, mês ou ano (uma linha por período e pessoa)."""
     por = request.GET.get('por', 'dia')
@@ -843,8 +955,8 @@ def calendario(request):
             'entregas': [entrega_json(e, u) for e in entregas_qs().filter(data__gte=inicio, data__lt=fim)],
             'feriados': [{'data': iso(f.data), 'descricao': f.descricao} for f in Feriado.objects.filter(data__gte=inicio, data__lt=fim)],
         })
-    if not u.pode('coordenacao'):
-        return erro('Só a coordenação muda o calendário.', 403)
+    if not u.pode('gestao'):
+        return erro('Só a supervisão e a coordenação mudam o calendário.', 403)
     d = request.dados
     dia = para_data(d.get('data'))
     c = resolver_convenio(d)
@@ -863,8 +975,8 @@ def entrega(request, pk):
         return erro('Entrega não encontrada.', 404)
     u = request.user
     if request.method == 'DELETE':
-        if not u.pode('coordenacao'):
-            return erro('Só a coordenação muda o calendário.', 403)
+        if not u.pode('gestao'):
+            return erro('Só a supervisão e a coordenação mudam o calendário.', 403)
         e.delete()
         return JsonResponse({'ok': True})
     if not entrega_json(e, u)['pode_concluir']:
@@ -884,7 +996,7 @@ def calendario_proximos(request):
     return JsonResponse({'hoje': iso(hoje()), 'entregas': [entrega_json(e, request.user) for e in qs]})
 
 
-@api('coordenacao', ('POST',))
+@api('gestao', ('POST',))
 def feriado(request):
     d = request.dados
     dia = para_data(d.get('data'))
@@ -895,3 +1007,94 @@ def feriado(request):
     else:
         Feriado.objects.filter(data=dia).delete()
     return JsonResponse({'ok': True})
+
+
+# ---------- Alertas (topo de todas as telas) ----------
+def dias_abertos_no_mes(c, ano, mes, feriados):
+    d = date(ano, mes, 1)
+    while d.month == mes:
+        if c.aberto_em(d, feriados):
+            yield d
+        d += timedelta(days=1)
+
+
+def proximo_dia_util(d, feriados):
+    d += timedelta(days=1)
+    while d.weekday() >= 5 or d in feriados:
+        d += timedelta(days=1)
+    return d
+
+
+DIAS_SEMANA = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom']
+
+
+@api()
+def alertas(request):
+    """Último dia do portal (hoje / próximo dia útil) e próximo envio do calendário.
+    Faturista: só os convênios dela (fatura ou passa XML). Gestão e coordenação: todos."""
+    u, agora = request.user, hoje()
+    feriados = feriados_do_mes(agora) | feriados_do_mes(agora.replace(day=28) + timedelta(days=4))
+    convs = Convenio.objects.filter(ativo=True).exclude(prazo_tipo='livre')
+    if not u.ve_todos:
+        convs = convs.filter(Q(faturista=u) | Q(responsavel_xml=u))
+    util = proximo_dia_util(agora, feriados)
+    hoje_ultimo, logo_ultimo = [], []
+    for c in convs:
+        abertos = list(dias_abertos_no_mes(c, agora.year, agora.month, feriados))
+        if not abertos:
+            continue
+        ultimo = abertos[-1]
+        if ultimo == agora:
+            hoje_ultimo.append(c.nome)
+        elif agora < ultimo <= util:
+            logo_ultimo.append(c.nome)
+    lista = []
+    if hoje_ultimo:
+        lista.append({'nivel': 'urgente', 'titulo': 'Último dia do portal hoje', 'itens': sorted(hoje_ultimo)})
+    if logo_ultimo:
+        quando = 'amanhã' if util == agora + timedelta(days=1) else f'{DIAS_SEMANA[util.weekday()]} {util:%d/%m}'
+        lista.append({'nivel': 'atencao', 'titulo': f'Último dia do portal: {quando}', 'itens': sorted(logo_ultimo)})
+
+    # Próximo envio do calendário ainda não entregue
+    ents = EntregaCalendario.objects.select_related('convenio').filter(data__gte=agora, concluido=False)
+    if not u.ve_todos:
+        ents = ents.filter(Q(convenio__faturista=u) | Q(convenio__responsavel_xml=u))
+    primeira = ents.order_by('data').first()
+    if primeira:
+        dia = primeira.data
+        nomes = sorted({e.convenio.nome for e in ents.filter(data=dia)})
+        if dia == agora:
+            titulo, nivel = 'Envio de hoje (calendário)', 'urgente'
+        elif dia == proximo_dia_util(agora, feriados):
+            titulo, nivel = f'Próximo envio: {"amanhã" if dia == agora + timedelta(days=1) else f"{DIAS_SEMANA[dia.weekday()]} {dia:%d/%m}"} — entregue hoje ao setor', 'atencao'
+        else:
+            titulo, nivel = f'Próximo envio: {DIAS_SEMANA[dia.weekday()]} {dia:%d/%m}', 'info'
+        lista.append({'nivel': nivel, 'titulo': titulo, 'itens': nomes, 'aba': 'calendario'})
+    # Valor do lote diferente do protocolo do convênio: o faturista corrige
+    lotes = Lote.objects.filter(envios_xml__valor_protocolo__isnull=False).distinct().select_related('convenio').prefetch_related('envios_xml')
+    if not u.ve_todos:
+        lotes = lotes.filter(faturista=u)
+    itens = [f'lote {l.numero_lote} ({l.convenio.nome}): sistema {moeda_br(l.valor_total)} · convênio {moeda_br(v)}'
+             for l in lotes if (v := divergencia(l)) is not None]
+    if itens:
+        lista.insert(0, {'nivel': 'urgente', 'aba': 'faturamento' if not u.ve_todos else 'gestao',
+                         'titulo': 'Valor diferente do protocolo do convênio — corrija o lote' if not u.ve_todos
+                         else 'Lotes com valor diferente do protocolo do convênio', 'itens': itens})
+    return JsonResponse({'hoje': iso(agora), 'alertas': lista})
+
+
+def moeda_br(v):
+    return 'R$ ' + f'{v:,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+
+
+# ---------- Tempo real ----------
+@api()
+def versao(request):
+    """Muda sempre que alguém lança, altera, confere ou apaga lote, envia XML ou marca entrega.
+    As telas perguntam isto a cada 10 s e se atualizam quando muda."""
+    from django.db.models import Max
+    l = Lote.objects.aggregate(n=Count('id'), m=Max('atualizado_em'))
+    e = EnvioXml.objects.aggregate(n=Count('id'), m=Max('atualizado_em'))
+    c = EntregaCalendario.objects.aggregate(n=Count('id'), m=Max('concluido_em'))
+    marca = lambda d: f"{d['n']}-{d['m'].timestamp() if d['m'] else 0}"
+    return JsonResponse({'versao': f'{marca(l)}|{marca(e)}|{marca(c)}'})

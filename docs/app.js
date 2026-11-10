@@ -21,6 +21,7 @@ const valorBR = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionD
 const PERFIS = { faturista: 'Faturista / XML', supervisora: 'Supervisora', coordenadora: 'Coordenadora', diretor: 'Diretor' };
 const STATUS = { lancado: 'Lançado', conferido: 'Conferido', devolvido: 'Devolvido' };
 const XML = { enviado: 'XML enviado', pendente: 'XML pendente', na: 'Sem XML' };
+const FUNCOES = { faturamento: 'Faturamento', xml: 'Envio de XML', ambos: 'Faturamento e XML' };
 const cookie = (nome) => document.cookie.split('; ').find((c) => c.startsWith(`${nome}=`))?.split('=')[1];
 
 async function api(url, opcoes = {}) {
@@ -29,6 +30,7 @@ async function api(url, opcoes = {}) {
   if (o.method && o.method !== 'GET') o.headers['X-CSRFToken'] = cookie('csrftoken') || ''; // proteção do Django
   const r = await fetch(url, o);
   if (r.status === 401 && !url.includes('/api/entrar')) { mostrarLogin(); throw new Error('Sessão expirada.'); }
+  if (r.status === 428) { trocarSenha(true); throw new Error('Troque sua senha para continuar.'); }
   const dados = r.headers.get('content-type')?.includes('json') ? await r.json() : null;
   if (!r.ok) throw new Error(dados?.erro || 'Erro inesperado.');
   return dados;
@@ -60,13 +62,14 @@ const ICONES = {
   faturamento: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
   gestao: '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>',
   coordenacao: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
+  producao: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
   diretoria: '<rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/>',
   xml: '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>',
   calendario: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
 };
 const icone = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[n]}</svg>`;
-const NOMES_ABAS = { faturamento: 'Faturamento', xml: 'Envio de XML', calendario: 'Calendário', gestao: 'Gestão', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
+const NOMES_ABAS = { faturamento: 'Faturamento', xml: 'Envio de XML', calendario: 'Calendário', gestao: 'Gestão', producao: 'Produção', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
 
 // ---------- Estado ----------
 const estado = { usuario: null, convenios: [], faturistas: [], aba: null };
@@ -78,8 +81,10 @@ async function carregarListas() {
 const meusConvenios = (campo) => estado.convenios.filter((c) => c.ativo && c[campo] === estado.usuario.id);
 // Prazo do portal: "1 à 7" + selo "aberto hoje"
 const prazo = (c) => (c.prazo_texto ? `${esc(c.prazo_texto)}${c.aberto_hoje ? ' <span class="selo conferido">aberto hoje</span>' : ''}` : '<span class="apagado">—</span>');
-const opcoesPessoa = (sel, vazio = 'Ninguém') => `<option value="">${vazio}</option>` +
-  estado.faturistas.map((f) => `<option value="${f.id}" ${String(sel) === String(f.id) ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
+// "papel": 'fatura' ou 'xml' filtra pela função da pessoa (sem perder quem já está escolhido)
+const opcoesPessoa = (sel, vazio = 'Ninguém', papel = '') => `<option value="">${vazio}</option>` +
+  estado.faturistas.filter((f) => !papel || f[papel] !== false || String(sel) === String(f.id))
+    .map((f) => `<option value="${f.id}" ${String(sel) === String(f.id) ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
 const opcoesConvenio = (sel, todos = true) => (todos ? '<option value="">Todos</option>' : '') +
   estado.convenios.map((c) => `<option value="${c.id}" ${String(sel) === String(c.id) ? 'selected' : ''}>${esc(c.nome)}${c.ativo ? '' : ' (inativo)'}</option>`).join('');
 const opcoesFaturista = (sel, todos = true) => (todos ? '<option value="">Todos</option>' : '') +
@@ -96,8 +101,9 @@ async function mostrarLogin() {
   $('#form-login').classList.toggle('oculto', !!lista.length);
   const ordem = ['diretor', 'coordenadora', 'supervisora', 'faturista'];
   $('#escolher .pessoas').innerHTML = lista.sort((a, b) => ordem.indexOf(a.perfil) - ordem.indexOf(b.perfil)).map((u) =>
-    `<button data-login="${esc(u.login)}"><span class="avatar">${esc(u.nome[0])}</span><b>${esc(u.nome)}</b><small>${PERFIS[u.perfil]}</small></button>`).join('');
+    `<button data-login="${esc(u.login)}" data-nome="${esc(u.nome)}" data-sem-senha="${u.semSenha !== false}"><span class="avatar">${esc(u.nome[0])}</span><b>${esc(u.nome)}</b><small>${PERFIS[u.perfil]}</small></button>`).join('');
   if (!lista.length) $('#login').focus();
+  $('#escolher > small').textContent = lista[0]?.semSenha === false ? 'Clique no seu nome e digite a senha' : 'Modo demonstração · acesso sem senha';
 }
 $('#form-login').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -108,23 +114,85 @@ $('#form-login').addEventListener('submit', async (e) => {
     entrar();
   } catch (err) { $('#erro-login').textContent = err.message; }
 });
+// Clicar na pessoa: na demonstração entra direto; no sistema de verdade pede a senha.
 $('#escolher').addEventListener('click', async (e) => {
   const b = e.target.closest('[data-login]');
   if (!b) return;
-  try { estado.usuario = await api('/api/entrar', { method: 'POST', corpo: { login: b.dataset.login } }); entrar(); }
-  catch (err) { $('#erro-login').textContent = err.message; }
+  $('#erro-login').textContent = '';
+  if (b.dataset.semSenha !== 'false') {
+    try { estado.usuario = await api('/api/entrar', { method: 'POST', corpo: { login: b.dataset.login } }); entrar(); }
+    catch (err) { $('#erro-login').textContent = err.message; }
+    return;
+  }
+  modal(`<h2>Olá, ${esc(b.dataset.nome)}</h2><form>
+    <div class="campo"><label>Senha</label><input name="senha" type="password" autocomplete="current-password" required autofocus></div>
+    <p class="erro-modal"></p>
+    <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Voltar</button><button class="btn btn-primario">Entrar</button></div></form>`,
+  (el, fechar) => {
+    $('input', el).focus();
+    $('form', el).addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      try {
+        estado.usuario = await api('/api/entrar', { method: 'POST', corpo: { login: b.dataset.login, senha: ev.target.senha.value } });
+        fechar(); entrar();
+      } catch (err) { $('.erro-modal', el).textContent = err.message; ev.target.senha.select(); }
+    });
+  });
 });
 $('#sair').addEventListener('click', async () => {
   await api('/api/sair', { method: 'POST' });
   estado.usuario = null;
-  history.replaceState(null, '', '/');
+  $('#alertas').innerHTML = '';
+  $('#ao-vivo')?.classList.add('oculto');
+  vivo.versao = null;
+  history.replaceState(null, '', location.pathname);
   mostrarLogin();
 });
+$('#minha-senha').addEventListener('click', () => trocarSenha(false));
+
+// Troca de senha. "obrigatoria": senha inicial — não dá para fechar nem usar o sistema antes.
+function trocarSenha(obrigatoria) {
+  if (document.querySelector('.form-senha')) return;
+  const fecharModal = modal(`<h2>${obrigatoria ? 'Crie sua senha' : 'Trocar senha'}</h2>
+    ${obrigatoria ? '<p class="apagado" style="margin-top:-6px">Você está com a senha inicial. Crie uma senha sua para continuar.</p>' : ''}
+    <form class="form-senha">
+      <div class="campo"><label>Senha atual${obrigatoria ? ' (a inicial)' : ''}</label><input name="atual" type="password" autocomplete="current-password" required></div>
+      <div class="campo"><label>Senha nova (mínimo 6 caracteres)</label><input name="nova" type="password" minlength="6" autocomplete="new-password" required></div>
+      <div class="campo"><label>Repita a senha nova</label><input name="confirmacao" type="password" minlength="6" autocomplete="new-password" required></div>
+      <p class="erro-modal"></p>
+      <div class="rodape">${obrigatoria ? '<button type="button" class="btn btn-claro" data-sair-troca>Sair</button>' : '<button type="button" class="btn btn-claro" data-fechar>Cancelar</button>'}
+        <button class="btn btn-primario">Salvar senha</button></div></form>`,
+  (el, fechar) => {
+    if (obrigatoria) {
+      el.onmousedown = null; // não fecha clicando fora
+      el.addEventListener('mousedown', (ev) => ev.stopImmediatePropagation(), true);
+      $('[data-sair-troca]', el).addEventListener('click', () => { fechar(); $('#sair').click(); });
+    }
+    $('input', el).focus();
+    $('form', el).addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      try {
+        estado.usuario = await api('/api/senha', { method: 'POST', corpo: Object.fromEntries(new FormData(ev.target)) });
+        fechar(); avisar('Senha salva.');
+        if (obrigatoria) entrar();
+      } catch (err) { $('.erro-modal', el).textContent = err.message; }
+    });
+  });
+  return fecharModal;
+}
 
 async function entrar() {
   $('#tela-login').classList.add('oculto');
   $('#tela-app').classList.remove('oculto');
   const u = estado.usuario;
+  $('#minha-senha').classList.toggle('oculto', !!u.modoDemo);
+  if (u.trocarSenha) {
+    $('#nome-usuario').textContent = u.nome;
+    $('#perfil-usuario').textContent = PERFIS[u.perfil];
+    $('#abas').innerHTML = '';
+    $('#conteudo').innerHTML = '';
+    return trocarSenha(true);
+  }
   $('#nome-usuario').textContent = u.nome;
   $('#perfil-usuario').textContent = PERFIS[u.perfil];
   $('#abas').innerHTML = u.abas.map((a) => `<button class="aba" data-aba="${a}">${icone(a)}${NOMES_ABAS[a]}</button>`).join('');
@@ -134,6 +202,7 @@ async function entrar() {
   // algum convênio, senão Envio de XML.
   let aba = u.abas.filter((a) => a !== 'calendario').pop();
   if (u.perfil === 'faturista') aba = meusConvenios('faturista_id').length || !meusConvenios('xml_id').length ? 'faturamento' : 'xml';
+  if (!u.abas.includes(aba)) aba = u.abas[0];
   abrirAba(u.abas.includes(salva) ? salva : aba);
 }
 $('#abas').addEventListener('click', (e) => { const b = e.target.closest('[data-aba]'); if (b) abrirAba(b.dataset.aba); });
@@ -144,9 +213,97 @@ function abrirAba(aba) {
   $('#conteudo').onchange = null;
   history.replaceState(null, '', `#${aba}`);
   $$('.aba').forEach((b) => b.classList.toggle('ativa', b.dataset.aba === aba));
-  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, gestao: telaGestao, coordenacao: telaCoordenacao, diretoria: telaDiretoria };
+  carregarAlertas();
+  vivo.pendente = false;
+  verificarMudancas();
+  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, gestao: telaGestao, producao: telaCoordenacao, coordenacao: telaCoordenacao, diretoria: telaDiretoria };
   tentar(telas[aba])();
 }
+
+// ---------- Tabelas responsivas ----------
+// Cada célula ganha o nome da coluna (data-rotulo). Quando a tabela não cabe, o CSS
+// transforma cada linha num cartão com "Coluna: valor" (ver .tabela-caixa no styles.css).
+function rotularTabelas(raiz = document) {
+  for (const t of raiz.querySelectorAll('.tabela-caixa table')) {
+    const nomes = [...t.querySelectorAll('thead th')].map((th) => th.textContent.trim());
+    for (const tr of t.querySelectorAll('tbody tr, tfoot tr')) {
+      let i = 0;
+      for (const td of tr.children) {
+        const nome = nomes[i] || '';
+        if (td.dataset.rotulo !== nome) td.dataset.rotulo = nome;
+        i += Number(td.getAttribute('colspan') || 1);
+      }
+    }
+  }
+}
+new MutationObserver(() => rotularTabelas()).observe(document.body, { childList: true, subtree: true });
+
+// ---------- Tempo real ----------
+// A cada 10 s pergunta ao servidor se algo mudou (lote lançado, conferido, XML enviado, entrega marcada).
+// Telas de acompanhamento se redesenham sozinhas; nas de trabalho (Faturamento, Gestão) aparece "Atualizar".
+const AUTO = ['producao', 'coordenacao', 'diretoria', 'xml', 'calendario'];
+const vivo = { versao: null, pendente: false };
+const horaAgora = () => new Date().toLocaleTimeString('pt-BR');
+function mostrarVivo(texto, comBotao = false) {
+  let el = $('#ao-vivo');
+  if (!el) { el = document.createElement('div'); el.id = 'ao-vivo'; document.body.append(el); }
+  el.innerHTML = `<span class="pulso"></span>${texto}${comBotao ? ' <button type="button" data-atualizar>Atualizar</button>' : ''}`;
+  el.classList.toggle('novo', comBotao);
+  el.classList.toggle('oculto', !estado.usuario || estado.usuario.trocarSenha);
+}
+document.addEventListener('click', (e) => {
+  if (e.target.closest('#ao-vivo [data-atualizar]')) { vivo.pendente = false; redesenharAoVivo(); }
+});
+async function redesenharAoVivo() {
+  const y = window.scrollY;
+  await abrirAba(estado.aba);
+  window.scrollTo(0, y);
+  mostrarVivo(`Ao vivo · atualizado às ${horaAgora()}`);
+}
+const ocupado = () => document.querySelector('.fundo-modal')
+  || (document.activeElement && document.activeElement.closest('#conteudo') && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))
+  || ($('#revisao') && $('#revisao').innerHTML.trim()) || ($('#x-revisao') && $('#x-revisao').innerHTML.trim());
+async function verificarMudancas() {
+  if (!estado.usuario || estado.usuario.trocarSenha || document.hidden) return;
+  let r;
+  try { r = await api('/api/versao'); } catch { return; }
+  if (vivo.versao === null) { vivo.versao = r.versao; mostrarVivo(`Ao vivo · atualizado às ${horaAgora()}`); return; }
+  if (r.versao === vivo.versao && !vivo.pendente) { mostrarVivo(`Ao vivo · conferido às ${horaAgora()}`); return; }
+  vivo.versao = r.versao;
+  carregarAlertas();
+  if (AUTO.includes(estado.aba) && !ocupado()) { vivo.pendente = false; return redesenharAoVivo(); }
+  vivo.pendente = true;
+  mostrarVivo('Há lançamentos novos', true);
+}
+setInterval(verificarMudancas, 10000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) verificarMudancas(); });
+
+// ---------- Alertas: último dia do portal e próximo envio ----------
+// Aparecem no topo de todas as telas. O × esconde até o dia seguinte (só neste navegador).
+const chaveAlerta = (a, dia) => `alerta:${dia}:${a.titulo}`;
+async function carregarAlertas() {
+  let r;
+  try { r = await api('/api/alertas'); } catch { return; }
+  const escondido = (a) => { try { return sessionStorage.getItem(chaveAlerta(a, r.hoje)) === '1'; } catch { return false; } };
+  const visiveis = r.alertas.filter((a) => !escondido(a));
+  $('#alertas').innerHTML = visiveis.map((a) => `<div class="alerta ${a.nivel}" data-chave="${esc(chaveAlerta(a, r.hoje))}">
+      <span class="alerta-icone">${a.nivel === 'urgente' ? '!' : a.nivel === 'atencao' ? '⏰' : 'ℹ'}</span>
+      <div><b>${esc(a.titulo)}</b><span>${a.itens.slice(0, 10).map(esc).join(', ')}${a.itens.length > 10 ? ` e mais ${a.itens.length - 10}` : ''}</span></div>
+      ${a.aba ? `<button class="btn btn-claro btn-mini" data-ir="${a.aba}">${a.aba === 'calendario' ? 'Ver calendário' : 'Ver lotes'}</button>` : ''}
+      <button class="fechar-alerta" title="Esconder até amanhã" data-fechar-alerta>×</button></div>`).join('');
+  // Bolinha vermelha na aba Calendário quando há algo para hoje
+  $('[data-aba=calendario]')?.classList.toggle('com-alerta', r.alertas.some((a) => a.nivel === 'urgente'));
+}
+$('#alertas').addEventListener('click', (e) => {
+  const ir = e.target.closest('[data-ir]');
+  if (ir) return abrirAba(ir.dataset.ir);
+  const fechar = e.target.closest('[data-fechar-alerta]');
+  if (fechar) {
+    const caixa = fechar.closest('.alerta');
+    try { sessionStorage.setItem(caixa.dataset.chave, '1'); } catch {}
+    caixa.remove();
+  }
+});
 
 // ---------- Formulário de lote (novo a partir do PDF, ou edição) ----------
 function formLote(d) {
@@ -218,7 +375,8 @@ function tabelaLotes(lotes, { gestao = false } = {}) {
       <td class="num">${num(l.qtd_guias)}</td><td class="num">${moeda(l.valor_total)}</td>
       <td><span class="selo ${l.status}" title="${esc(l.observacao)}">${STATUS[l.status]}</span>
         ${l.status === 'devolvido' && l.observacao ? `<br><small style="color:var(--vermelho)">${esc(l.observacao)}</small>` : ''}</td>
-      <td><span class="selo xml-${l.xml}">${XML[l.xml]}</span></td>
+      <td><span class="selo xml-${l.xml}">${XML[l.xml]}</span>${l.valor_convenio != null
+        ? `<br><span class="selo devolvido" title="O protocolo do convênio veio com outro valor. Confira e corrija o lote.">Convênio: ${moeda(l.valor_convenio)}</span>` : ''}</td>
       <td><div class="acoes">
         ${l.arquivo ? `<a class="btn btn-claro btn-mini" href="/api/lotes/${l.id}/pdf" target="_blank">PDF</a>` : ''}
         ${gestao && l.status !== 'conferido' ? '<button class="btn btn-claro btn-mini" data-acao="conferir">Conferir</button>' : ''}
@@ -331,7 +489,9 @@ async function telaFaturamento() {
       const corpo = lerFormLote(e.target, { arquivoId: d.arquivoId, guiasTexto: d.guiasTexto, prestador: d.prestador,
         convenioNome: d.convenioNome, convenioCodigo: d.convenioCodigo, geradoPor: d.geradoPor });
       const r = await api('/api/lotes', { method: 'POST', corpo });
-      avisar(r.xmlAmarrados ? `Lote ${corpo.numeroLote} salvo e amarrado ao XML que já tinha sido enviado.` : `Lote ${corpo.numeroLote} salvo.`);
+      const dono = estado.faturistas.find((p) => String(p.id) === String(corpo.faturistaId));
+      const deOutro = dono && dono.id !== estado.usuario.id ? ` na produção de ${dono.nome}` : '';
+      avisar(r.xmlAmarrados ? `Lote ${corpo.numeroLote} salvo${deOutro} e amarrado ao XML já enviado.` : `Lote ${corpo.numeroLote} salvo${deOutro}.`);
       await carregarListas();
       telaFaturamento();
     }));
@@ -351,7 +511,7 @@ async function telaXml() {
     <div class="topo"><div><h1>Envio de XML</h1><p>Anexe o protocolo do envio. O sistema acha o lote pelo número e amarra sozinho.</p></div>
       ${todos ? `<div class="campo" style="margin:0;min-width:220px"><label>Responsável pelo XML</label><select id="x-resp">${opcoesPessoa(f.responsavel, 'Toda a equipe')}</select></div>` : ''}</div>
     <div class="kpis">
-      <div class="kpi destaque"><span>Lotes aguardando XML</span><b>${num(res.pendentes)}</b><small>${moeda(res.pendentesValor)} em lotes lançados</small></div>
+      <div class="kpi destaque"><span>Lotes aguardando XML</span><b>${num(res.pendentes)}</b><small>${res.pendentesValor == null ? 'lançados pelo faturamento' : `${moeda(res.pendentesValor)} em lotes lançados`}</small></div>
       <div class="kpi"><span>XML enviados no mês</span><b>${num(res.enviadosMes)}</b></div>
       <div class="kpi"><span>Protocolos esperando o lote</span><b>${num(res.aguardandoLote)}</b><small>XML enviado antes do lançamento</small></div>
     </div>
@@ -386,7 +546,7 @@ async function telaXml() {
       <thead><tr><th>Lote</th><th>Convênio</th><th>Faturista</th>${todos ? '<th>XML com</th>' : ''}<th>Lançado em</th><th class="num">Guias</th><th class="num">Valor</th><th>Prazo do portal</th><th></th></tr></thead>
       <tbody>${pendentes.map((l) => `<tr data-id="${l.id}"><td><b>${esc(l.numero_lote)}</b></td><td>${esc(l.convenio)}</td><td>${esc(l.faturista)}</td>
         ${todos ? `<td>${esc(l.responsavel_xml || '—')}</td>` : ''}<td>${dataBR(l.data_lancamento)}</td>
-        <td class="num">${num(l.qtd_guias)}</td><td class="num">${moeda(l.valor_total)}</td>
+        <td class="num">${l.qtd_guias == null ? '—' : num(l.qtd_guias)}</td><td class="num">${l.valor_total == null ? '—' : moeda(l.valor_total)}</td>
         <td>${l.prazo_texto ? esc(l.prazo_texto) : '—'}${l.aberto_hoje ? ' <span class="selo conferido">aberto hoje</span>' : ''}</td>
         <td><div class="acoes"><button class="btn btn-primario btn-mini" data-anexar>Anexar protocolo</button>
           <button class="btn btn-claro btn-mini" data-marcar>Marcar enviado</button></div></td></tr>`).join('')}</tbody></table></div>`;
@@ -398,9 +558,10 @@ async function telaXml() {
       <tbody>${envios.map((e) => `<tr data-id="${e.id}"><td>${dataBR(e.data_envio)}</td>
         <td><b>${esc(e.numero_lote)}</b>${e.demo ? '<span class="selo demo">demo</span>' : ''}</td><td>${esc(e.convenio)}</td>
         ${todos ? `<td>${esc(e.responsavel)}</td>` : ''}
-        <td>${e.lote_id ? `<span class="selo conferido">Amarrado</span> <small class="apagado">${num(e.lote_guias)} guias · ${moeda(e.lote_valor)} · ${esc(e.faturista)}</small>`
+        <td>${e.lote_id ? `<span class="selo conferido">Amarrado</span> <small class="apagado">${e.lote_valor == null ? '' : `${num(e.lote_guias)} guias · ${moeda(e.lote_valor)} · `}${esc(e.faturista)}</small>`
           : '<span class="selo lancado">Esperando o lote</span>'}</td>
-        <td>${esc(e.protocolo || '—')}</td>
+        <td>${esc(e.protocolo || '—')}${e.valor_protocolo != null ? `<br><small class="apagado">${moeda(e.valor_protocolo)}</small>` : ''}
+          ${e.divergente ? '<br><span class="selo devolvido">valor diferente do lote</span>' : ''}</td>
         <td><div class="acoes">${e.arquivo ? `<a class="btn btn-claro btn-mini" href="/api/xml/${e.id}/arquivo" target="_blank">Arquivo</a>` : ''}
           <button class="btn btn-claro btn-mini" data-editar>Editar</button><button class="btn btn-perigo btn-mini" data-excluir>Excluir</button></div></td></tr>`).join('')}</tbody></table></div>`;
   });
@@ -440,7 +601,7 @@ async function telaXml() {
   function revisao(d) {
     const conveniosXml = estado.convenios.filter((c) => c.tem_xml || c.id === d.convenioId);
     const escolher = d.candidatos.length > 1;
-    const cand = (l) => `${esc(l.numero_lote)} · ${esc(l.convenio)} · ${num(l.qtd_guias)} guias · ${moeda(l.valor_total)} · ${esc(l.faturista)} · ${dataBR(l.data_lancamento)}`;
+    const cand = (l) => `${esc(l.numero_lote)} · ${esc(l.convenio)}${l.valor_total == null ? '' : ` · ${num(l.qtd_guias)} guias · ${moeda(l.valor_total)}`} · ${esc(l.faturista)} · ${dataBR(l.data_lancamento)}`;
     $('#x-revisao').innerHTML = `<form style="margin-top:18px">
       ${d.avisos.length ? `<div class="avisos">${d.avisos.map(esc).join('<br>')}</div>` : ''}
       ${d.loteId && !escolher ? `<div class="avisos ok">Amarrado ao lote <b>${cand(d.candidatos.find((c) => c.id === d.loteId) || d.candidatos[0])}</b></div>` : ''}
@@ -452,6 +613,8 @@ async function telaXml() {
           ${conveniosXml.map((c) => `<option value="${c.id}" ${c.id === d.convenioId ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></div>
         <div class="campo"><label>Data do envio</label><input name="dataEnvio" type="date" value="${hoje()}" required></div>
         <div class="campo"><label>Protocolo do portal (opcional)</label><input name="protocolo" value="${esc(d.protocolo)}"></div>
+        <div class="campo"><label>Valor no protocolo do convênio (R$)</label><input name="valorProtocolo" inputmode="decimal" value="${d.valorProtocolo != null ? valorBR(d.valorProtocolo) : ''}" placeholder="0,00">
+          <div class="guias-regra">Se for diferente do valor lançado, o faturista é avisado para corrigir.</div></div>
         ${todos ? `<div class="campo"><label>Quem enviou</label><select name="responsavelId">${opcoesFaturista(estado.usuario.id, false)}</select></div>` : ''}
       </div>
       <div class="campo"><label>Observação</label><textarea name="observacao" rows="2"></textarea></div>
@@ -465,7 +628,8 @@ async function telaXml() {
       const mesmoLote = !escolher && v.numeroLote === d.numeroLote && Number(v.convenioId) === d.convenioId;
       const corpo = { ...v, arquivoId: d.arquivoId, nomeArquivo: d.nomeArquivo, loteId: escolher ? v.loteId : mesmoLote ? d.loteId : null };
       const r = await api('/api/xml', { method: 'POST', corpo });
-      avisar(r.amarrado ? `XML do lote ${r.numeroLote} registrado e amarrado.` : `XML registrado. Vai amarrar quando o lote ${r.numeroLote} for lançado.`);
+      if (r.divergente) avisar(`Valor diferente do lançado no lote ${r.numeroLote}. ${r.faturista} foi avisado(a) para corrigir.`, true);
+      else avisar(r.amarrado ? `XML do lote ${r.numeroLote} registrado e amarrado.` : `XML registrado. Vai amarrar quando o lote ${r.numeroLote} for lançado.`);
       recarregar();
     }));
     $('#x-revisao').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -494,7 +658,8 @@ async function telaXml() {
         <div class="campo"><label>Nº do lote</label><input name="numeroLote" value="${esc(env.numero_lote)}" required></div>
         <div class="campo"><label>Convênio</label><select name="convenioId">${opcoesConvenio(env.convenio_id, false)}</select></div>
         <div class="campo"><label>Data do envio</label><input name="dataEnvio" type="date" value="${env.data_envio}" required></div>
-        <div class="campo"><label>Protocolo do portal</label><input name="protocolo" value="${esc(env.protocolo)}"></div></div>
+        <div class="campo"><label>Protocolo do portal</label><input name="protocolo" value="${esc(env.protocolo)}"></div>
+        <div class="campo"><label>Valor no protocolo (R$)</label><input name="valorProtocolo" inputmode="decimal" value="${env.valor_protocolo != null ? valorBR(env.valor_protocolo) : ''}"></div></div>
         <div class="campo"><label>Observação</label><textarea name="observacao" rows="2">${esc(env.observacao)}</textarea></div>
         <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Cancelar</button><button class="btn btn-primario">Salvar</button></div></form>`,
       (el, fechar) => $('form', el).addEventListener('submit', tentar(async (ev) => {
@@ -524,7 +689,7 @@ const estadoCal = { mes: '', filtro: '', pessoa: '' };
 
 async function telaCalendario() {
   const s = estadoCal;
-  const coord = estado.usuario.abas.includes('coordenacao');
+  const coord = estado.usuario.abas.includes('gestao'); // supervisão e coordenação montam o calendário
   if (!s.mes) s.mes = hoje().slice(0, 7);
   if (!s.filtro) s.filtro = veTodos() ? 'todos' : 'meus';
   const [cal, prox] = await Promise.all([api(`/api/calendario?mes=${s.mes}`), api('/api/calendario/proximos')]);
@@ -603,8 +768,10 @@ async function telaCalendario() {
         <span class="entrega exemplo"><span class="ponto"></span><span class="nome">De outra pessoa</span></span> Passe o mouse para ver quem fatura e quem passa o XML.</p>
     </div>
     <div class="duas">
-      <div class="cartao"><h2>Portais fixos <small class="apagado">prazo de cada portal no mês</small></h2>
-        <div class="chips">${portais.map((c) => `<span class="chip ${c.aberto_hoje ? 'aberto' : ''}"><b>${esc(c.nome)}</b><small>${esc(c.prazo_texto)}${c.aberto_hoje ? ' · aberto hoje' : ''}</small></span>`).join('') || '<span class="apagado">Nenhum.</span>'}</div></div>
+      <div class="cartao"><h2>Portais fixos <small class="apagado">${coord ? 'clique num convênio para mudar o prazo' : 'prazo de cada portal no mês'}</small></h2>
+        <div class="chips">${portais.map((c) => `<${coord ? 'button type="button"' : 'span'} class="chip ${c.aberto_hoje ? 'aberto' : ''} ${coord ? 'editavel' : ''}" data-prazo-conv="${c.id}"><b>${esc(c.nome)}</b><small>${esc(c.prazo_texto)}${c.aberto_hoje ? ' · aberto hoje' : ''}</small></${coord ? 'button' : 'span'}>`).join('') || '<span class="apagado">Nenhum.</span>'}</div>
+        ${coord ? `<div class="campo" style="margin:14px 0 0;max-width:320px"><label>Definir prazo de outro convênio</label>
+          <select id="prazo-outro"><option value="">Escolha…</option>${estado.convenios.filter((c) => c.ativo && !c.prazo_texto).map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>` : ''}</div>
       <div class="cartao"><h2>Regras do calendário</h2><ol class="regras">${REGRAS_CALENDARIO.map((r) => `<li>${esc(r)}</li>`).join('')}</ol></div>
     </div>`;
 
@@ -621,16 +788,60 @@ async function telaCalendario() {
       return telaCalendario();
     }
     if (alvo.closest('[data-adicionar]')) adicionarNoDia(alvo.closest('[data-dia]').dataset.dia, feriados);
+    const chip = alvo.closest('[data-prazo-conv]');
+    if (chip && coord) editarPrazo(estado.convenios.find((c) => c.id === Number(chip.dataset.prazoConv)), telaCalendario);
   });
   $('#conteudo').onchange = tentar(async (e) => {
     if (e.target.id === 'cal-pessoa') { s.pessoa = e.target.value; return telaCalendario(); }
+    if (e.target.id === 'prazo-outro' && e.target.value) return editarPrazo(estado.convenios.find((c) => c.id === Number(e.target.value)), telaCalendario);
     const caixa = e.target.closest('[data-concluir]');
     if (!caixa) return;
     const id = Number(caixa.closest('.entrega').dataset.id);
     try {
       const r = await api(`/api/calendario/${id}`, { method: 'PATCH', corpo: { concluido: caixa.checked } });
       avisar(r.concluido ? `${r.convenio}: entregue.` : `${r.convenio}: desmarcado.`);
-    } finally { telaCalendario(); }
+    } finally { telaCalendario(); carregarAlertas(); }
+  });
+}
+
+// Prazo do portal: "de X a Y", "dias X e Y", "até o Nº dia útil" ou texto livre.
+// Supervisão e coordenação podem mudar.
+function editarPrazo(c, depois) {
+  const t = c.prazo_tipo && c.prazo_texto ? c.prazo_tipo : 'intervalo';
+  const opcao = (v, rotulo) => `<label class="opcao"><input type="radio" name="tipo" value="${v}" ${t === v ? 'checked' : ''}> ${rotulo}</label>`;
+  modal(`<h2>Prazo do portal · ${esc(c.nome)}</h2><form class="form-prazo">
+    ${opcao('intervalo', 'De um dia a outro <small class="apagado">ex.: de 1 a 7</small>')}
+    <div class="sub" data-para="intervalo">De <input name="inicio" type="number" min="1" max="31" value="${c.prazo_inicio ?? ''}"> a <input name="fim" type="number" min="1" max="31" value="${c.prazo_fim ?? ''}"></div>
+    ${opcao('dias', 'Dias específicos <small class="apagado">ex.: 9 e 27</small>')}
+    <div class="sub" data-para="dias">Dias <input name="dias" placeholder="9 e 27" value="${(c.prazo_dias || []).join(' e ')}" style="width:160px"></div>
+    ${opcao('dia_util', 'Até o Nº dia útil <small class="apagado">ex.: até o 5º dia útil (desconta os feriados do calendário)</small>')}
+    <div class="sub" data-para="dia_util">Até o <input name="dia_util" type="number" min="1" max="23" value="${c.prazo_dia_util ?? ''}">º dia útil</div>
+    ${opcao('livre', 'Outro <small class="apagado">texto livre, ex.: diário até as 17h</small>')}
+    <div class="sub" data-para="livre"><input name="livre" value="${c.prazo_tipo === 'livre' ? esc(c.prazo_texto) : ''}" style="width:100%"></div>
+    <div class="campo" data-hora style="margin-top:10px;max-width:200px"><label>Até que horas? (opcional)</label><input name="hora" placeholder="17h" value="${esc(c.prazo_hora || '')}"></div>
+    <p class="apagado" id="previa" style="margin:6px 0 0"></p>
+    <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Cancelar</button><button class="btn btn-primario">Salvar prazo</button></div></form>`,
+  (el, fechar) => {
+    const form = $('form', el);
+    const atualizar = () => {
+      const tipo = form.tipo.value;
+      $$('.sub', el).forEach((d) => d.classList.toggle('oculto', d.dataset.para !== tipo));
+      $('[data-hora]', el).classList.toggle('oculto', tipo === 'livre');
+      const dias = [...new Set((form.dias.value.match(/\d+/g) || []).map(Number).filter((n) => n >= 1 && n <= 31))].sort((a, b) => a - b);
+      const base = tipo === 'intervalo' ? (form.inicio.value && form.fim.value ? `${form.inicio.value} a ${form.fim.value}` : '')
+        : tipo === 'dias' ? (dias.length > 1 ? `${dias.slice(0, -1).join(', ')} e ${dias.at(-1)}` : dias.join(''))
+        : tipo === 'dia_util' ? (form.dia_util.value ? `até o ${form.dia_util.value}º dia útil` : '') : form.livre.value;
+      $('#previa', el).textContent = base ? `Vai aparecer: ${base}${tipo !== 'livre' && form.hora.value ? `, até as ${form.hora.value}` : ''}` : '';
+    };
+    form.addEventListener('input', atualizar);
+    atualizar();
+    form.addEventListener('submit', tentar(async (e) => {
+      e.preventDefault();
+      const prazo = Object.fromEntries(new FormData(form));
+      const novo = await api(`/api/convenios/${c.id}`, { method: 'PUT', corpo: { prazo } });
+      estado.convenios = estado.convenios.map((x) => (x.id === c.id ? novo : x));
+      fechar(); avisar(`${novo.nome}: ${novo.prazo_texto}.`); depois();
+    }));
   });
 }
 
@@ -706,9 +917,9 @@ async function gestaoUsuarios() {
   const perfis = estado.usuario.perfil === 'diretor' ? Object.keys(PERFIS) : ['faturista'];
   $('#sub').innerHTML = `<div class="cartao">
     <h2>Usuários <button class="btn btn-primario btn-mini" id="novo-usuario">Novo usuário</button></h2>
-    <div class="tabela-caixa"><table><thead><tr><th>Nome</th><th>Login</th><th>Perfil</th><th>Situação</th><th>Criado em</th><th></th></tr></thead>
-    <tbody>${usuarios.map((u) => `<tr data-id="${u.id}"><td><b>${esc(u.nome)}</b></td><td>${esc(u.login)}</td><td>${PERFIS[u.perfil]}</td>
-      <td><span class="selo ${u.ativo ? 'conferido' : 'devolvido'}">${u.ativo ? 'Ativo' : 'Inativo'}</span></td><td>${dataBR(u.criado_em.slice(0, 10))}</td>
+    <div class="tabela-caixa"><table><thead><tr><th>Nome</th><th>Login</th><th>Perfil</th><th>Função</th><th>Situação</th><th>Criado em</th><th></th></tr></thead>
+    <tbody>${usuarios.map((u) => `<tr data-id="${u.id}"><td><b>${esc(u.nome)}</b></td><td>${esc(u.login)}</td><td>${PERFIS[u.perfil]}</td><td>${u.perfil === 'faturista' ? FUNCOES[u.funcao] : '—'}</td>
+      <td><span class="selo ${u.ativo ? 'conferido' : 'devolvido'}">${u.ativo ? 'Ativo' : 'Inativo'}</span>${u.trocar_senha ? ' <span class="selo lancado" title="Ainda não criou a própria senha">senha inicial</span>' : ''}</td><td>${dataBR(u.criado_em.slice(0, 10))}</td>
       <td><div class="acoes">${perfis.includes(u.perfil) ? '<button class="btn btn-claro btn-mini" data-editar>Editar</button>' : ''}</div></td></tr>`).join('')}</tbody></table></div></div>`;
 
   const form = (u = {}) => `<form>
@@ -716,9 +927,12 @@ async function gestaoUsuarios() {
       <div class="campo"><label>Nome</label><input name="nome" value="${esc(u.nome)}" required></div>
       <div class="campo"><label>Login</label><input name="login" value="${esc(u.login)}" ${u.id ? 'disabled' : 'required'}></div>
       <div class="campo"><label>Perfil</label><select name="perfil">${perfis.map((p) => `<option value="${p}" ${u.perfil === p ? 'selected' : ''}>${PERFIS[p]}</option>`).join('')}</select></div>
-      <div class="campo"><label>${u.id ? 'Nova senha (opcional)' : 'Senha (opcional na demonstração)'}</label><input name="senha" type="password" minlength="6" autocomplete="new-password"></div>
+      <div class="campo"><label>Função (equipe)</label><select name="funcao">${Object.entries(FUNCOES).map(([k, v]) => `<option value="${k}" ${(u.funcao || 'ambos') === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+
     </div>
-    ${u.id ? `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="ativo" style="width:auto" ${u.ativo ? 'checked' : ''}> Usuário ativo</label>` : ''}
+    ${u.id ? `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="ativo" style="width:auto" ${u.ativo ? 'checked' : ''}> Usuário ativo</label>
+      <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" name="redefinir" style="width:auto"> Redefinir a senha para a inicial (a pessoa cria outra no próximo acesso)</label>`
+      : '<p class="apagado" style="margin:0">A pessoa entra com a senha inicial e cria a dela no primeiro acesso.</p>'}
     <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Cancelar</button><button class="btn btn-primario">Salvar</button></div></form>`;
 
   $('#novo-usuario').addEventListener('click', () => modal(`<h2>Novo usuário</h2>${form()}`, (el, fechar) => {
@@ -735,7 +949,7 @@ async function gestaoUsuarios() {
       $('form', el).addEventListener('submit', tentar(async (ev) => {
         ev.preventDefault();
         const f = Object.fromEntries(new FormData(ev.target));
-        await api(`/api/usuarios/${u.id}`, { method: 'PUT', corpo: { ...f, ativo: !!f.ativo } });
+        await api(`/api/usuarios/${u.id}`, { method: 'PUT', corpo: { ...f, ativo: !!f.ativo, redefinir: !!f.redefinir } });
         fechar(); avisar('Usuário atualizado.'); await carregarListas(); gestaoUsuarios();
       }));
     });
@@ -780,18 +994,16 @@ async function coordConvenios(caixa) {
           <option value="xml" ${f.faltando === 'xml' ? 'selected' : ''}>Sem quem passe XML</option></select></div>
       </div>
       <div class="tabela-caixa"><table class="editavel">
-        <thead><tr><th>Convênio</th><th>Tem XML?</th><th>Quem fatura</th><th>Quem passa o XML</th><th>Prazo do portal</th><th>Abre / fecha (dia)</th><th>Ativo</th><th></th></tr></thead>
+        <thead><tr><th>Convênio</th><th>Tem XML?</th><th>Quem fatura</th><th>Quem passa o XML</th><th>Prazo do portal</th><th>Ativo</th><th></th></tr></thead>
         <tbody>${lista.map((c) => `<tr data-id="${c.id}" class="${c.ativo ? '' : 'inativo'}">
           <td><b>${esc(c.nome)}</b>${c.codigo ? `<br><small class="apagado">${esc(c.codigo)}</small>` : ''}</td>
           <td><label class="interruptor"><input type="checkbox" data-campo="tem_xml" ${c.tem_xml ? 'checked' : ''}><span>${c.tem_xml ? 'Sim' : 'Não'}</span></label></td>
-          <td><select data-campo="faturista_id" class="${c.faturista_id ? '' : 'falta'}">${opcoesPessoa(c.faturista_id, '— ninguém —')}</select></td>
-          <td><select data-campo="xml_id" class="${c.xml_id || !c.tem_xml ? '' : 'falta'}" ${c.tem_xml ? '' : 'disabled'}>${opcoesPessoa(c.xml_id, c.tem_xml ? '— ninguém —' : 'não tem XML')}</select></td>
-          <td><input data-campo="prazo_texto" value="${esc(c.prazo_texto)}" placeholder="ex.: 1 à 7"></td>
-          <td class="dias"><input data-campo="prazo_inicio" type="number" min="1" max="31" value="${c.prazo_inicio ?? ''}"> – <input data-campo="prazo_fim" type="number" min="1" max="31" value="${c.prazo_fim ?? ''}">
-            ${c.aberto_hoje ? '<span class="selo conferido">aberto hoje</span>' : ''}</td>
+          <td><select data-campo="faturista_id" class="${c.faturista_id ? '' : 'falta'}">${opcoesPessoa(c.faturista_id, '— ninguém —', 'fatura')}</select></td>
+          <td><select data-campo="xml_id" class="${c.xml_id || !c.tem_xml ? '' : 'falta'}" ${c.tem_xml ? '' : 'disabled'}>${opcoesPessoa(c.xml_id, c.tem_xml ? '— ninguém —' : 'não tem XML', 'xml')}</select></td>
+          <td class="prazo-cel">${prazo(c)} <button class="btn btn-claro btn-mini" data-prazo>Editar</button></td>
           <td><input type="checkbox" data-campo="ativo" ${c.ativo ? 'checked' : ''} style="width:auto"></td>
           <td><div class="acoes"><button class="btn btn-claro btn-mini" data-editar>Renomear</button><button class="btn btn-perigo btn-mini" data-excluir>Excluir</button></div></td>
-        </tr>`).join('') || '<tr><td colspan="8" class="vazio">Nenhum convênio nesse filtro.</td></tr>'}</tbody></table></div>
+        </tr>`).join('') || '<tr><td colspan="7" class="vazio">Nenhum convênio nesse filtro.</td></tr>'}</tbody></table></div>
       <p class="apagado" style="font-size:12px;margin:12px 0 0">Cada mudança salva na hora. Convênios novos que aparecem nos PDFs entram sozinhos (com XML, sem responsáveis).</p>
     </div>`;
 
@@ -812,7 +1024,7 @@ async function coordConvenios(caixa) {
       const novo = await api(`/api/convenios/${id}`, { method: 'PUT', corpo: { [campo]: valor } });
       estado.convenios = estado.convenios.map((c) => (c.id === id ? novo : c));
       avisar(`${novo.nome}: salvo.`);
-      if (['tem_xml', 'ativo', 'prazo_inicio', 'prazo_fim', 'faturista_id', 'xml_id'].includes(campo)) redesenhar();
+      if (['tem_xml', 'ativo', 'faturista_id', 'xml_id'].includes(campo)) redesenhar();
     } catch (err) { redesenhar(); throw err; }
   }));
 
@@ -830,6 +1042,7 @@ async function coordConvenios(caixa) {
     const tr = e.target.closest('tr[data-id]');
     if (!tr) return;
     const c = estado.convenios.find((x) => x.id === Number(tr.dataset.id));
+    if (e.target.closest('[data-prazo]')) return editarPrazo(c, redesenhar);
     if (e.target.closest('[data-editar]')) modal(`<h2>Renomear ${esc(c.nome)}</h2>${form(c)}`, salvar(c));
     if (e.target.closest('[data-excluir]') && confirm(`Excluir o convênio ${c.nome}?`)) {
       await api(`/api/convenios/${c.id}`, { method: 'DELETE' });
@@ -886,10 +1099,12 @@ const SUBS_COORD = [['relatorios', 'Produção e relatórios'], ['convenios', 'C
 
 async function telaCoordenacao() {
   const f = filtroCoord;
+  const soProducao = !estado.usuario.abas.includes('coordenacao');
+  if (soProducao) subCoord = 'relatorios';
   const cabeca = `
-    <div class="topo"><div><h1>Coordenação</h1><p>Produção da equipe, relatórios e quem cuida de cada convênio.</p></div>
+    <div class="topo"><div><h1>${soProducao ? 'Produção' : 'Coordenação'}</h1><p>${soProducao ? 'Produção dos faturistas por dia, mês e ano, e relatórios por convênio, competência ou período.' : 'Produção da equipe, relatórios e quem cuida de cada convênio.'}</p></div>
       ${subCoord === 'relatorios' ? '<div class="acoes"><button class="btn btn-claro" id="csv">Exportar planilha (CSV)</button><button class="btn btn-claro" onclick="print()">Imprimir</button></div>' : ''}</div>
-    <div class="subabas">${SUBS_COORD.map(([k, v]) => `<button data-sub="${k}" class="${subCoord === k ? 'ativa' : ''}">${v}</button>`).join('')}</div>`;
+    <div class="subabas ${soProducao ? 'oculto' : ''}">${SUBS_COORD.map(([k, v]) => `<button data-sub="${k}" class="${subCoord === k ? 'ativa' : ''}">${v}</button>`).join('')}</div>`;
   const ligarSub = () => $('.subabas').addEventListener('click', (e) => {
     const b = e.target.closest('[data-sub]');
     if (b) { subCoord = b.dataset.sub; telaCoordenacao(); }

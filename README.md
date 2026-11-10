@@ -22,6 +22,42 @@ python -m venv .venv
 .venv\Scripts\python.exe manage.py runserver 8000
 ```
 
+## Banco no Supabase (opcional)
+
+Sem configurar nada, o Faturale usa um banco local (`data/faturale.sqlite3`). Para usar o
+Postgres do Supabase:
+
+1. Em https://supabase.com crie um projeto (região **South America (São Paulo)**) e anote a
+   senha do banco.
+2. No projeto, clique em **Connect** e copie a string do **Session pooler**
+   (`postgresql://postgres.xxxx:[YOUR-PASSWORD]@aws-0-sa-east-1.pooler.supabase.com:5432/postgres`).
+3. Copie `.env.example` para `.env` e cole a string em `DATABASE_URL`, trocando `[YOUR-PASSWORD]`
+   pela senha (se a senha tiver `@`, `#` ou `/`, troque por `%40`, `%23`, `%2F`).
+4. Rode `iniciar.cmd`: ele cria as tabelas no Supabase (`migrate`) e a equipe/demonstração (`semear`).
+
+Para levar os dados que já estão no banco local, **antes** do passo 3:
+
+```bash
+.venv\Scripts\python.exe manage.py dumpdata faturamento -o data\copia.json
+```
+
+e, **depois** do passo 3 (já apontando para o Supabase):
+
+```bash
+.venv\Scripts\python.exe manage.py migrate
+.venv\Scripts\python.exe manage.py loaddata data\copia.json
+```
+
+Os PDFs e protocolos anexados continuam na pasta `data/arquivos` do computador.
+
+## Senhas
+
+Com `FATURALE_MODO_DEMO=0` no `.env`, clicar na pessoa pede a senha. Todo mundo começa com a
+**senha inicial** (`FATURALE_SENHA_INICIAL`, padrão `123456`) e é obrigado a criar a própria senha
+no primeiro acesso: antes disso o sistema não libera nenhuma tela. Gestão → Usuários → Editar →
+**Redefinir a senha** volta a pessoa para a senha inicial (esqueceu a senha). Para pôr a senha
+inicial em todos de uma vez: `manage.py senha_inicial` (ou `--login fulano`).
+
 ## Entrar (modo demonstração)
 
 A tela inicial mostra a equipe: é só clicar na pessoa, **sem senha**.
@@ -56,6 +92,27 @@ demonstração** tira os lotes fictícios. Para começar do zero, apague a pasta
   fixos e as regras do calendário. Cada pessoa marca como entregue o que é dela; "Meus convênios"
   mostra só os seus. A coordenação monta o mês pelo **+** de cada dia (convênio, observação como
   "até as 10h", feriado) e tira com o **×**.
+- **Alertas** (topo de todas as telas) — "último dia do portal hoje", "último dia do portal amanhã /
+  no próximo dia útil" e "próximo envio do calendário" (quando é no próximo dia útil, avisa para
+  entregar hoje ao setor). Faturista vê só os convênios dela; gestão e coordenação, todos.
+- **Prazo do portal** — três formatos: *de X a Y*, *dias X e Y* (ex.: Bradesco 9 e 27) ou *até o
+  Nº dia útil* (ex.: Assefaz, desconta feriados), com hora opcional. Supervisão e coordenação mudam
+  pelo Calendário (clicando no convênio em "Portais fixos") ou na Coordenação.
+- **Produção** (supervisora) — o mesmo relatório de produção da Coordenação: cada faturista por
+  dia/mês/ano, por convênio, competência ou período, CSV e impressão.
+- **Tempo real** — a cada 10 s as telas perguntam ao servidor se algo mudou (lote lançado, conferido,
+  XML enviado, entrega marcada). Produção, Coordenação, Diretoria, XML e Calendário se atualizam
+  sozinhas ("● Ao vivo"); em Faturamento e Gestão aparece o botão "Atualizar", para não recarregar
+  no meio de um lançamento ou filtro.
+- **Telas que se adaptam** — quando a tabela não cabe (notebook com zoom, tablet, celular), cada
+  linha vira um cartão, com os botões embaixo.
+- **Valor do convênio** — quem passa o XML informa (ou o sistema lê) o valor do protocolo do
+  convênio. Se for diferente do valor do lote, o faturista recebe um alerta vermelho e o lote fica
+  marcado "Convênio: R$ …"; quando ele corrige, o alerta some. ("XML pendente" = lote lançado, de
+  convênio com XML, ainda sem protocolo de envio.)
+- **Função de cada pessoa** — no cadastro (Gestão → Usuários): Faturamento, Envio de XML ou as
+  duas. Na distribuição dos convênios, "quem fatura" só lista quem fatura e "quem passa o XML" só
+  quem passa XML. Quem é só XML não vê a aba Faturamento (e vice-versa).
 - **Gestão** — lotes da equipe (conferir, devolver com motivo, editar, excluir, filtro por situação
   do XML) e usuários.
 - **Coordenação**

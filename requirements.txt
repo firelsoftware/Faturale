@@ -5,3 +5,6 @@ rapidocr==3.10.0
 onnxruntime==1.31.1
 pillow==13.0.0
 numpy==2.5.4
+# Banco Postgres (Supabase) e leitura do .env
+psycopg[binary]==3.3.8
+python-dotenv==1.2.4
