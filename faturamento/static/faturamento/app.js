@@ -565,6 +565,54 @@ function cartaoConvenios(titulo, lista) {
       <small>${c.prazo_texto ? esc(c.prazo_texto) : 'sem prazo'}${c.aberto_hoje ? ' · aberto hoje' : ''}${c.tem_xml ? '' : ' · sem XML'}</small></span>`).join('')}</div></div>`;
 }
 
+// ---------- Dados lidos do protocolo ----------
+// Mostra tudo o que o sistema extraiu do arquivo. Se o lote ainda não foi lançado, não é erro:
+// quem fatura pode lançar ali mesmo; quem só passa XML salva e o protocolo se liga ao lote depois.
+function quadroExtraidos(d) {
+  const x = d.extraidos;
+  if (!x) return '';
+  const item = (rotulo, valor) => (valor ? `<div><span>${rotulo}</span><b>${valor}</b></div>` : '');
+  const lancar = d.loteNaoLancado
+    ? (d.podeLancar
+      ? `<div class="extraidos-acao"><span>O lote <b>${esc(x.numeroLote)}</b> ainda não está lançado no Faturamento.</span>
+          <button type="button" class="btn btn-primario btn-mini" data-lancar-lote>Lançar o lote com estes dados</button></div>`
+      : `<div class="extraidos-acao"><span>O lote <b>${esc(x.numeroLote)}</b> ainda não está lançado no Faturamento. Pode registrar: o protocolo fica guardado e se liga sozinho ao lote quando ${esc(x.faturistaNome || 'o faturista')} lançar.</span></div>`)
+    : '';
+  return `<div class="extraidos"><h3>Dados lidos do arquivo${d.tipo === 'ocr' ? ' <small>(por OCR, confira)</small>' : ''}</h3>
+    <div class="extraidos-grade">
+      ${item('Lote', esc(x.numeroLote))}
+      ${item('Convênio', esc(x.convenioNome))}
+      ${item('Guias', x.qtdGuias ? `${x.qtdGuias}${x.guiasTexto ? ` <small>(${esc(x.guiasTexto)})</small>` : ''}` : '')}
+      ${item('Valor', x.valorTotal != null ? moeda(x.valorTotal) : '')}
+      ${item('Competência', x.competencia ? compBR(x.competencia) : '')}
+      ${item('Período', x.periodoInicio ? `${dataBR(x.periodoInicio)}${x.periodoFim && x.periodoFim !== x.periodoInicio ? ` a ${dataBR(x.periodoFim)}` : ''}` : '')}
+      ${item('Tipo', esc(x.tipo))}
+      ${item('Quem gerou', x.geradoPor ? `${esc(x.faturistaNome || x.geradoPor)} <small>(${esc(x.geradoPorOrigem)})</small>` : '')}
+    </div>${lancar}</div>`;
+}
+function ligarLancarDoProtocolo(d, caixa, redesenhar) {
+  const b = caixa.querySelector('[data-lancar-lote]');
+  if (!b) return;
+  b.addEventListener('click', tentar(async () => {
+    const x = d.extraidos;
+    if (!x.convenioId && !x.convenioNome) throw new Error('Não deu para ler o convênio. Lance o lote pelo Faturamento.');
+    if (!x.qtdGuias || x.valorTotal == null || !x.competencia) throw new Error('Faltam guias, valor ou competência no arquivo. Lance o lote pelo Faturamento.');
+    b.disabled = true;
+    const r = await api('/api/lotes', { method: 'POST', corpo: {
+      numeroLote: x.numeroLote, convenioId: x.convenioId, convenioNome: x.convenioNome, convenioCodigo: x.convenioCodigo,
+      qtdGuias: x.qtdGuias, guiasTexto: x.guiasTexto, valorTotal: x.valorTotal, competencia: x.competencia,
+      periodoInicio: x.periodoInicio, periodoFim: x.periodoFim, tipo: x.tipo, prestador: x.prestador,
+      dataLancamento: hoje(), faturistaId: x.faturistaId, geradoPor: x.geradoPor } });
+    avisar(`Lote ${x.numeroLote} lançado${x.faturistaNome ? ` na produção de ${x.faturistaNome}` : ''}. Agora registre o protocolo.`);
+    await carregarListas();
+    const conv = estado.convenios.find((c) => c.id === x.convenioId) || estado.convenios.find((c) => c.nome === x.convenioNome);
+    Object.assign(d, { loteId: r.id, loteNaoLancado: false, convenioId: conv?.id ?? d.convenioId, numeroLote: x.numeroLote,
+      candidatos: [{ id: r.id, numero_lote: x.numeroLote, convenio_id: conv?.id, convenio: conv?.nome || x.convenioNome,
+        faturista: x.faturistaNome || estado.usuario.nome, qtd_guias: x.qtdGuias, valor_total: x.valorTotal, data_lancamento: hoje() }] });
+    redesenhar(d);
+  }));
+}
+
 // ---------- Aba: Faturamento ----------
 async function telaFaturamento() {
   const eu = estado.usuario;
@@ -666,6 +714,7 @@ async function telaFaturamento() {
     const lote = d.candidatos.find((c) => c.id === d.loteId) || (!escolher && d.candidatos[0]);
     const cand = (l) => `${esc(l.numero_lote)} · ${esc(l.convenio)} · ${l.valor_total != null ? moeda(l.valor_total) : ''} · lançado em ${dataBR(l.data_lancamento)}`;
     $('#p-revisao').innerHTML = `<form style="margin-top:18px">
+      ${quadroExtraidos(d)}
       ${d.avisos.length ? `<div class="avisos">${d.avisos.map(esc).join('<br>')}</div>` : ''}
       ${lote && !escolher ? `<div class="avisos ok">Lote encontrado: <b>${cand(lote)}</b></div>` : ''}
       ${escolher ? `<div class="campo"><label>Mais de um lote combina. Qual é?</label>${d.candidatos.map((l, i) =>
@@ -680,6 +729,7 @@ async function telaFaturamento() {
       </div>
       <p class="apagado" id="p-compara" style="margin:0 0 12px"></p>
       <div class="acoes"><button type="button" class="btn btn-claro" data-cancelar>Cancelar</button><button class="btn btn-primario">Salvar protocolo</button></div></form>`;
+    ligarLancarDoProtocolo(d, $('#p-revisao'), revisaoProtocolo);
     const form = $('#p-revisao form');
     // Compara na hora com o valor do lote
     const comparar = () => {
@@ -832,6 +882,7 @@ async function telaXml() {
     const escolher = d.candidatos.length > 1;
     const cand = (l) => `${esc(l.numero_lote)} · ${esc(l.convenio)}${l.valor_total == null ? '' : ` · ${num(l.qtd_guias)} guias · ${moeda(l.valor_total)}`} · ${esc(l.faturista)} · ${dataBR(l.data_lancamento)}`;
     $('#x-revisao').innerHTML = `<form style="margin-top:18px">
+      ${quadroExtraidos(d)}
       ${d.avisos.length ? `<div class="avisos">${d.avisos.map(esc).join('<br>')}</div>` : ''}
       ${d.loteId && !escolher ? `<div class="avisos ok">Amarrado ao lote <b>${cand(d.candidatos.find((c) => c.id === d.loteId) || d.candidatos[0])}</b></div>` : ''}
       ${escolher ? `<div class="campo"><label>Mais de um lote combina. Qual é?</label>${d.candidatos.map((l, i) =>
@@ -849,6 +900,7 @@ async function telaXml() {
       <div class="campo"><label>Observação</label><textarea name="observacao" rows="2"></textarea></div>
       ${d.nomeArquivo ? `<p class="apagado" style="margin:0 0 12px">Arquivo: ${esc(d.nomeArquivo)}${d.tipo === 'ocr' ? ' · lido por OCR' : ''}</p>` : ''}
       <div class="acoes"><button type="button" class="btn btn-claro" data-cancelar>Cancelar</button><button class="btn btn-primario">Registrar envio</button></div></form>`;
+    ligarLancarDoProtocolo(d, $('#x-revisao'), revisao);
     $('#x-revisao [data-cancelar]').addEventListener('click', () => { $('#x-revisao').innerHTML = ''; });
     $('#x-revisao form').addEventListener('submit', tentar(async (e) => {
       e.preventDefault();

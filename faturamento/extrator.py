@@ -217,7 +217,10 @@ def ler_protocolo_xml(dados: bytes, nome_arquivo: str) -> dict:
         achado['tipo'] = 'pdf' if metodo == 'texto' else 'ocr'
         texto = '\n'.join(linhas)
         d = analisar(linhas)
-        achado.update(numeroLote=d['numeroLote'], convenioNome=d['convenioNome'], convenioCodigo=d['convenioCodigo'])
+        achado.update(numeroLote=d['numeroLote'], convenioNome=d['convenioNome'], convenioCodigo=d['convenioCodigo'],
+                      qtdGuias=d['qtdGuias'], guiasTexto=d['guiasTexto'], competencia=d['competencia'],
+                      periodoInicio=d['periodoInicio'], periodoFim=d['periodoFim'], tipoProtocolo=d['tipo'], prestador=d['prestador'],
+                      usuarioRodape=d['usuarioRodape'], sufixoProtocolo=d['sufixoProtocolo'], sufixoComHifen=d['sufixoComHifen'])
         m = re.search(r'protocolo\s*(?:n[º°o.]*|de envio|do portal)?\s*[:\-]?\s*(\d{4,})', texto, re.I)
         if m and m.group(1) != d['numeroLote']:
             achado['protocolo'] = m.group(1)

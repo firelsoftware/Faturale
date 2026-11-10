@@ -669,6 +669,16 @@ def xml_ler(request):
         # Procura no texto algum número de lote que ainda espera XML
         sem_protocolo = (base.filter(~com_envio(), convenio__tem_xml=True) if do_faturamento else lotes_sem_xml(request))
         candidatos = list(sem_protocolo.filter(numero_lote__in=achado['numeros'][:500])[:10])
+    # Tudo o que foi lido do arquivo, para mostrar na tela (e lançar o lote, se ainda não existir)
+    extraidos = None
+    if achado.get('numeroLote'):
+        gerado, origem, pessoa = quem_gerou(achado)
+        extraidos = {k: achado.get(k) for k in ('numeroLote', 'convenioNome', 'convenioCodigo', 'qtdGuias', 'guiasTexto', 'competencia',
+                                                'periodoInicio', 'periodoFim', 'prestador')}
+        extraidos.update(tipo=achado.get('tipoProtocolo'), valorTotal=achado.get('valor'), geradoPor=gerado, geradoPorOrigem=origem,
+                         faturistaId=pessoa.id if pessoa else None, faturistaNome=pessoa.nome if pessoa else None,
+                         convenioId=c.id if c else None)
+    nao_lancado = False
     lote_ = candidatos[0] if len(candidatos) == 1 else None
     if lote_:
         c = lote_.convenio
@@ -680,8 +690,7 @@ def xml_ler(request):
         avisos.append(f'O lote {achado["numeroLote"]} não está entre os seus lançamentos. Lance o lote primeiro '
                       '(ou confira o número). Se salvar assim, o protocolo fica esperando o lote.')
     elif achado['numeroLote'] and not candidatos:
-        avisos.append('Lote ainda não lançado pelo faturamento. O protocolo fica aguardando e se amarra '
-                      'sozinho quando o lote for lançado.')
+        nao_lancado = True  # não é erro: a tela mostra os dados lidos e oferece lançar o lote
     elif not candidatos:
         avisos.append('Não achei o número do lote no arquivo. Escolha o lote na lista ou digite o número.')
     return JsonResponse({
@@ -689,6 +698,7 @@ def xml_ler(request):
         'numeroLote': lote_.numero_lote if lote_ else achado['numeroLote'],
         'convenioId': c.id if c else None, 'convenioNome': achado['convenioNome'],
         'protocolo': achado['protocolo'], 'loteId': lote_.id if lote_ else None, 'valorProtocolo': achado.get('valor'),
+        'extraidos': extraidos, 'loteNaoLancado': nao_lancado, 'podeLancar': request.user.faz_faturamento,
         'candidatos': [candidato_json(l, request.user) for l in candidatos[:10]], 'avisos': avisos,
     })
 

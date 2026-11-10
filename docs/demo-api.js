@@ -352,7 +352,7 @@
         const f = corpo.get('arquivo');
         let d = { numeroLote: '', convenioNome: '', convenioCodigo: '', numeros: [], tipo: 'outro' };
         const avisos = [];
-        if (/\.pdf$/i.test(f.name)) { d = { ...analisar(await linhasDoPdf(await f.arrayBuffer())), tipo: 'pdf' }; d.valor = d.valorTotal || null; }
+        if (/\.pdf$/i.test(f.name)) { const a = analisar(await linhasDoPdf(await f.arrayBuffer())); d = { ...a, tipoProtocolo: a.tipo, tipo: 'pdf' }; d.valor = d.valorTotal || null; }
         else if (/\.xml$/i.test(f.name)) {
           const t = await f.text(); const tag = (n) => t.match(new RegExp(`<(?:\\w+:)?${n}>\\s*([^<\\s]+)`))?.[1] || '';
           const soma = (t.match(/<(?:\w+:)?valorTotalGeral>\s*([\d.]+)/g) || []).reduce((s2, m) => s2 + Number(m.replace(/.*>\s*/, '')), 0);
@@ -366,10 +366,16 @@
         if (!cand.length && d.numeros.length) cand = (doFat ? baseL.filter((l) => conv(l.convenio_id).tem_xml && !temEnvio(l)) : lotesSemXml(q, u)).filter((l) => d.numeros.includes(l.numero_lote)).slice(0, 10);
         const lote = cand.length === 1 ? cand[0] : null;
         if (lote) c = conv(lote.convenio_id);
-        else if (d.numeroLote && !cand.length) avisos.push('Lote ainda não lançado pelo faturamento. O protocolo fica aguardando e se amarra sozinho quando o lote for lançado.');
-        else if (!cand.length && !avisos.length) avisos.push('Não achei o número do lote no arquivo. Escolha o lote na lista ou digite o número.');
+        const naoLancado = !!(d.numeroLote && !cand.length);
+        if (!d.numeroLote && !cand.length && !avisos.length) avisos.push('Não achei o número do lote no arquivo. Escolha o lote na lista ou digite o número.');
         return json({ arquivoId: guardarPendente(f), nomeArquivo: f.name, tipo: d.tipo, numeroLote: lote?.numero_lote || d.numeroLote, convenioId: c?.id || null,
-          convenioNome: d.convenioNome, protocolo: d.protocolo || '', valorProtocolo: d.valor ?? null, loteId: lote?.id || null, candidatos: cand.map(candJson), avisos });
+          convenioNome: d.convenioNome, protocolo: d.protocolo || '', valorProtocolo: d.valor ?? null, loteId: lote?.id || null,
+          loteNaoLancado: naoLancado, podeLancar: fazFat(u),
+          extraidos: d.numeroLote ? (() => { const [g, origem, pes] = d.usuarioRodape !== undefined ? quemGerou(d) : ['', '', null];
+            return { numeroLote: d.numeroLote, convenioNome: d.convenioNome, convenioCodigo: d.convenioCodigo, qtdGuias: d.qtdGuias, guiasTexto: d.guiasTexto,
+              competencia: d.competencia, periodoInicio: d.periodoInicio, periodoFim: d.periodoFim, tipo: d.tipoProtocolo, prestador: d.prestador,
+              valorTotal: d.valor ?? null, geradoPor: g, geradoPorOrigem: origem, faturistaId: pes?.id || null, faturistaNome: pes?.nome || null,
+              convenioId: (c || acharConvenio(d.convenioNome, d.convenioCodigo))?.id || null }; })() : null, candidatos: cand.map(candJson), avisos });
       }
       if (r1 === 'pendentes') return json(lotesSemXml(q, u).sort((a, b) => a.data_lancamento.localeCompare(b.data_lancamento))
         .map((l) => ({ ...candJson(l), prazo_texto: conv(l.convenio_id).prazo_texto, aberto_hoje: abertoHoje(conv(l.convenio_id)), responsavel_xml: nome(conv(l.convenio_id).xml_id) })));

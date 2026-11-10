@@ -412,3 +412,15 @@ body:has(.faixa-demo) #chat { bottom: 128px; height: min(520px, calc(100vh - 150
 .chat-avisos { display: block; width: calc(100% - 20px); margin: 10px; padding: 9px 12px; border: 1px dashed var(--azul); border-radius: 10px;
   background: var(--azul-suave); color: var(--navy-700); font-weight: 600; cursor: pointer; text-align: left; font-size: 13px; }
 .chat-avisos.negado { border-color: #f0dca6; background: var(--amarelo-suave); color: #6b4a00; font-weight: 500; cursor: default; }
+
+/* Dados lidos do protocolo */
+.extraidos { border: 1px solid #c9dbff; background: var(--azul-suave); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+.extraidos h3 { font-size: 13px; margin: 0 0 10px; color: var(--navy-700); }
+.extraidos h3 small { font-weight: 500; color: var(--amarelo); }
+.extraidos-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px 16px; }
+.extraidos-grade div { display: flex; flex-direction: column; min-width: 0; }
+.extraidos-grade span { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--texto-2); }
+.extraidos-grade b { font-size: 14px; overflow-wrap: anywhere; }
+.extraidos-grade small { font-weight: 500; color: var(--texto-2); }
+.extraidos-acao { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 10px;
+  border-top: 1px solid #c9dbff; font-size: 13px; color: var(--navy-700); }
