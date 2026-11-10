@@ -407,6 +407,41 @@
 
     if (r0 === 'versao') return json({ versao: `${db.lotes.length}:${db.envios.length}:${db.entregas.filter((e) => e.concluido).length}:${JSON.stringify(db.lotes.map((l) => l.status)).length}` });
 
+    if (r0 === 'mensagens') {
+      // Na demonstração as mensagens ficam neste navegador: troque de pessoa para ver a conversa do outro lado
+      db.mensagens ||= []; db.lidaEquipe ||= {};
+      const daConversa = (com) => db.mensagens.filter((m) => (com === 'equipe' ? m.para == null
+        : (m.de === u.id && m.para === Number(com)) || (m.de === Number(com) && m.para === u.id)));
+      const msgJson = (m) => ({ id: m.id, autor: nome(m.de), autor_id: m.de, minha: m.de === u.id, texto: m.texto, criado_em: m.criado_em });
+      const naoLidas = () => {
+        const equipe = db.mensagens.filter((m) => m.para == null && m.de !== u.id && m.id > (db.lidaEquipe[u.id] || 0)).length;
+        const porPessoa = {};
+        for (const m of db.mensagens) if (m.para === u.id && !m.lida) porPessoa[m.de] = (porPessoa[m.de] || 0) + 1;
+        return [equipe, porPessoa];
+      };
+      if (r1 === 'resumo') { const [e, pp] = naoLidas(); return json({ naoLidas: e + Object.values(pp).reduce((a2, b) => a2 + b, 0) }); }
+      if (r1 === 'conversas') {
+        const [e, pp] = naoLidas();
+        const ult = (com) => { const l = daConversa(com); return l.length ? msgJson(l.at(-1)) : null; };
+        const outros = db.usuarios.filter((x) => x.ativo && x.id !== u.id).map((x) => ({ chave: String(x.id), nome: x.nome, perfil: x.perfil, naoLidas: pp[x.id] || 0, ultima: ult(String(x.id)) }))
+          .sort((a2, b) => ((b.ultima || {}).id || 0) - ((a2.ultima || {}).id || 0) || a2.nome.localeCompare(b.nome));
+        return json([{ chave: 'equipe', nome: 'Equipe toda', naoLidas: e, ultima: ult('equipe') }, ...outros]);
+      }
+      const com = String(q.get('com') || corpo.com || 'equipe');
+      if (metodo === 'POST') {
+        const texto = String(corpo.texto || '').trim();
+        if (!texto) return erro('Escreva a mensagem.');
+        const m = { id: novoId(db.mensagens), de: u.id, para: com === 'equipe' ? null : Number(com), texto: texto.slice(0, 2000), criado_em: new Date().toISOString(), lida: false };
+        db.mensagens.push(m); salvar(); return json(msgJson(m));
+      }
+      const conv2 = daConversa(com);
+      const depois = Number(q.get('depois') || 0);
+      if (com === 'equipe') db.lidaEquipe[u.id] = Math.max(db.lidaEquipe[u.id] || 0, ...conv2.map((m) => m.id), 0);
+      else conv2.forEach((m) => { if (m.para === u.id) m.lida = true; });
+      salvar();
+      return json((depois ? conv2.filter((m) => m.id > depois) : conv2.slice(-100)).map(msgJson));
+    }
+
     if (r0 === 'alertas') {
       // Último dia do portal (hoje / próximo dia útil) e próximo envio do calendário
       const fer = new Set(db.feriados.map((f) => f.data));

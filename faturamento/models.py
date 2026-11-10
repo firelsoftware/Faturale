@@ -20,6 +20,8 @@ class Usuario(AbstractUser):
 
     # Senha inicial (ou redefinida pela gestão): obriga a trocar no próximo acesso
     trocar_senha = models.BooleanField('trocar a senha no próximo acesso', default=True)
+    # Última mensagem da conversa "Equipe toda" que a pessoa já viu (para contar as não lidas)
+    equipe_lida_ate = models.PositiveIntegerField(default=0)
 
     # Abas que cada perfil enxerga. A diretoria vê tudo.
     ABAS = {
@@ -211,3 +213,19 @@ class Feriado(models.Model):
 
     def __str__(self):
         return f'{self.data:%d/%m} · {self.descricao}'
+
+
+class Mensagem(models.Model):
+    """Conversa entre a equipe. Sem destinatário = "Equipe toda"."""
+    autor = models.ForeignKey(Usuario, models.CASCADE, related_name='mensagens_enviadas')
+    destinatario = models.ForeignKey(Usuario, models.CASCADE, null=True, blank=True, related_name='mensagens_recebidas')
+    texto = models.TextField(max_length=2000)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    lida_em = models.DateTimeField(null=True, blank=True)  # só nas conversas individuais
+
+    class Meta:
+        ordering = ['id']
+        indexes = [models.Index(fields=['destinatario', 'lida_em'])]
+
+    def __str__(self):
+        return f'{self.autor} → {self.destinatario or "equipe"}: {self.texto[:40]}'

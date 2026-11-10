@@ -22,7 +22,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 
 from .extrator import extrair_lote, ler_protocolo_xml
 from .management.commands.semear import normalizar
-from .models import Convenio, EntregaCalendario, EnvioXml, Feriado, Lote, Usuario
+from .models import Convenio, EntregaCalendario, EnvioXml, Feriado, Lote, Mensagem, Usuario
 
 
 # ---------- Utilidades ----------
@@ -1106,3 +1106,70 @@ def versao(request):
     c = EntregaCalendario.objects.aggregate(n=Count('id'), m=Max('concluido_em'))
     marca = lambda d: f"{d['n']}-{d['m'].timestamp() if d['m'] else 0}"
     return JsonResponse({'versao': f'{marca(l)}|{marca(e)}|{marca(c)}'})
+
+
+# ---------- Mensagens entre a equipe ----------
+def mensagem_json(m, u):
+    return {'id': m.id, 'autor': m.autor.nome, 'autor_id': m.autor_id, 'minha': m.autor_id == u.id,
+            'texto': m.texto, 'criado_em': timezone.localtime(m.criado_em).isoformat(timespec='seconds')}
+
+
+def conversa_qs(u, com):
+    """'equipe' = conversa de todos; senão o id da outra pessoa."""
+    if com == 'equipe':
+        return Mensagem.objects.filter(destinatario__isnull=True)
+    outro = int(com)
+    return Mensagem.objects.filter(Q(autor=u, destinatario_id=outro) | Q(autor_id=outro, destinatario=u))
+
+
+def nao_lidas(u):
+    equipe = Mensagem.objects.filter(destinatario__isnull=True, id__gt=u.equipe_lida_ate).exclude(autor=u).count()
+    por_pessoa = dict(Mensagem.objects.filter(destinatario=u, lida_em__isnull=True)
+                      .values_list('autor_id').annotate(n=Count('id')))
+    return equipe, por_pessoa
+
+
+@api()
+def mensagens_resumo(request):
+    """Total de não lidas (para o número vermelho do botão)."""
+    equipe, por_pessoa = nao_lidas(request.user)
+    return JsonResponse({'naoLidas': equipe + sum(por_pessoa.values())})
+
+
+@api()
+def mensagens_conversas(request):
+    u = request.user
+    equipe, por_pessoa = nao_lidas(u)
+    ultima = lambda qs: (lambda m: mensagem_json(m, u) if m else None)(qs.select_related('autor').order_by('-id').first())
+    lista = [{'chave': 'equipe', 'nome': 'Equipe toda', 'naoLidas': equipe, 'ultima': ultima(conversa_qs(u, 'equipe'))}]
+    for p in Usuario.objects.filter(is_active=True).exclude(id=u.id).order_by('first_name'):
+        lista.append({'chave': str(p.id), 'nome': p.nome, 'perfil': p.perfil, 'naoLidas': por_pessoa.get(p.id, 0),
+                      'ultima': ultima(conversa_qs(u, str(p.id)))})
+    # Equipe toda primeiro; depois quem tem mensagem mais recente
+    lista[1:] = sorted(lista[1:], key=lambda c: (c['ultima'] or {}).get('id', 0), reverse=True)
+    return JsonResponse(lista, safe=False)
+
+
+@api(None, ('GET', 'POST'))
+def mensagens(request):
+    u, com = request.user, (request.GET.get('com') or request.dados.get('com') or 'equipe')
+    if com != 'equipe' and not (str(com).isdigit() and Usuario.objects.filter(id=int(com), is_active=True).exclude(id=u.id).exists()):
+        return erro('Conversa não encontrada.', 404)
+    if request.method == 'POST':
+        texto = str(request.dados.get('texto') or '').strip()
+        if not texto:
+            return erro('Escreva a mensagem.')
+        m = Mensagem.objects.create(autor=u, destinatario=None if com == 'equipe' else Usuario.objects.get(id=int(com)), texto=texto[:2000])
+        return JsonResponse(mensagem_json(m, u))
+    qs = conversa_qs(u, com).select_related('autor')
+    depois = request.GET.get('depois')
+    lista = list(qs.filter(id__gt=int(depois)) if str(depois or '').isdigit() else qs.order_by('-id')[:100])
+    lista.sort(key=lambda m: m.id)
+    # Ao abrir a conversa, marca como lida
+    if com == 'equipe':
+        ultimo = qs.order_by('-id').values_list('id', flat=True).first() or 0
+        if ultimo > u.equipe_lida_ate:
+            Usuario.objects.filter(id=u.id).update(equipe_lida_ate=ultimo)
+    else:
+        Mensagem.objects.filter(autor_id=int(com), destinatario=u, lida_em__isnull=True).update(lida_em=timezone.now())
+    return JsonResponse([mensagem_json(m, u) for m in lista], safe=False)

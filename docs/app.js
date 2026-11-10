@@ -145,6 +145,8 @@ $('#sair').addEventListener('click', async () => {
   estado.usuario = null;
   $('#alertas').innerHTML = '';
   $('#ao-vivo')?.classList.add('oculto');
+  mostrarBotaoChat(false);
+  chat.com = null;
   vivo.versao = null;
   history.replaceState(null, '', location.pathname);
   mostrarLogin();
@@ -187,6 +189,8 @@ async function entrar() {
   $('#tela-app').classList.remove('oculto');
   const u = estado.usuario;
   $('#minha-senha').classList.toggle('oculto', !!u.modoDemo);
+  mostrarBotaoChat(!u.trocarSenha);
+  contarNaoLidas();
   if (u.trocarSenha) {
     $('#nome-usuario').textContent = u.nome;
     $('#perfil-usuario').textContent = PERFIS[u.perfil];
@@ -239,6 +243,95 @@ function rotularTabelas(raiz = document) {
 }
 new MutationObserver(() => rotularTabelas()).observe(document.body, { childList: true, subtree: true });
 
+// ---------- Mensagens entre a equipe ----------
+// Botão no canto com o número de não lidas. Conversa "Equipe toda" e conversas individuais.
+// Com a conversa aberta, as mensagens novas chegam a cada 4 s.
+const chat = { aberto: false, com: null, nome: '', ultimo: 0, timer: null };
+
+function montarChat() {
+  if ($('#chat-botao')) return;
+  document.body.insertAdjacentHTML('beforeend', `
+    <button id="chat-botao" class="oculto" title="Mensagens"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="chat-conta oculto"></span></button>
+    <section id="chat" class="oculto" aria-label="Mensagens">
+      <header><button class="chat-voltar oculto" title="Voltar">‹</button><b id="chat-titulo">Mensagens</b><button class="chat-fechar" title="Fechar">×</button></header>
+      <div id="chat-corpo"></div>
+      <form id="chat-form" class="oculto"><textarea name="texto" rows="1" placeholder="Escreva uma mensagem…" maxlength="2000"></textarea><button class="btn btn-primario">Enviar</button></form>
+    </section>`);
+  $('#chat-botao').addEventListener('click', () => (chat.aberto ? fecharChat() : abrirChat()));
+  $('#chat .chat-fechar').addEventListener('click', fecharChat);
+  $('#chat .chat-voltar').addEventListener('click', () => listarConversas());
+  $('#chat-corpo').addEventListener('click', (e) => { const c = e.target.closest('[data-com]'); if (c) abrirConversa(c.dataset.com, c.dataset.nome); });
+  const form = $('#chat-form');
+  form.texto.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
+  form.addEventListener('submit', tentar(async (e) => {
+    e.preventDefault();
+    const texto = form.texto.value.trim();
+    if (!texto) return;
+    form.texto.value = '';
+    await api('/api/mensagens', { method: 'POST', corpo: { com: chat.com, texto } });
+    await buscarNovas();
+  }));
+}
+function mostrarBotaoChat(sim) { montarChat(); $('#chat-botao').classList.toggle('oculto', !sim); if (!sim) fecharChat(); }
+async function contarNaoLidas() {
+  if (!estado.usuario || estado.usuario.trocarSenha) return;
+  try {
+    const r = await api('/api/mensagens/resumo');
+    const el = $('#chat-botao .chat-conta');
+    el.textContent = r.naoLidas > 99 ? '99+' : r.naoLidas;
+    el.classList.toggle('oculto', !r.naoLidas);
+  } catch {}
+}
+function abrirChat() { chat.aberto = true; $('#chat').classList.remove('oculto'); chat.com ? abrirConversa(chat.com, chat.nome) : listarConversas(); }
+function fecharChat() { chat.aberto = false; clearInterval(chat.timer); $('#chat')?.classList.add('oculto'); }
+const horaMsg = (iso) => {
+  const d = new Date(iso);
+  return isoLocal(d) === hoje() ? d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : `${dataBR(isoLocal(d)).slice(0, 5)} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+};
+const tentarChat = (fn) => tentar(fn);
+const listarConversas = tentarChat(async () => {
+  clearInterval(chat.timer);
+  chat.com = null;
+  $('#chat-titulo').textContent = 'Mensagens';
+  $('#chat .chat-voltar').classList.add('oculto');
+  $('#chat-form').classList.add('oculto');
+  const lista = await api('/api/mensagens/conversas');
+  $('#chat-corpo').innerHTML = `<ul class="chat-lista">${lista.map((c) => `<li data-com="${c.chave}" data-nome="${esc(c.nome)}">
+      <span class="avatar ${c.chave === 'equipe' ? 'equipe' : ''}">${c.chave === 'equipe' ? '👥' : esc(c.nome[0])}</span>
+      <div><b>${esc(c.nome)}</b><small>${c.ultima ? `${c.ultima.minha ? 'Você' : esc(c.ultima.autor.split(' ')[0])}: ${esc(c.ultima.texto.slice(0, 60))}` : (c.perfil ? PERFIS[c.perfil] : 'Recados para todo mundo')}</small></div>
+      ${c.naoLidas ? `<span class="chat-conta">${c.naoLidas}</span>` : ''}</li>`).join('')}</ul>`;
+  contarNaoLidas();
+});
+const abrirConversa = tentarChat(async (com, nome) => {
+  chat.com = com; chat.nome = nome; chat.ultimo = 0;
+  $('#chat-titulo').textContent = nome;
+  $('#chat .chat-voltar').classList.remove('oculto');
+  $('#chat-form').classList.remove('oculto');
+  $('#chat-corpo').innerHTML = '<div class="chat-msgs"></div>';
+  await buscarNovas();
+  $('#chat-form').texto.focus();
+  clearInterval(chat.timer);
+  chat.timer = setInterval(() => { if (!document.hidden) buscarNovas(); }, 4000);
+});
+async function buscarNovas() {
+  if (!chat.com) return;
+  let novas;
+  try { novas = await api(`/api/mensagens?com=${chat.com}${chat.ultimo ? `&depois=${chat.ultimo}` : ''}`); } catch { return; }
+  const caixa = $('#chat-corpo .chat-msgs');
+  if (!caixa) return;
+  if (!novas.length && !chat.ultimo) caixa.innerHTML = `<div class="vazio">Nenhuma mensagem ainda. ${chat.com === 'equipe' ? 'O que você escrever aqui todo mundo vê.' : 'Só vocês dois veem esta conversa.'}</div>`;
+  if (novas.length) {
+    if (!chat.ultimo) caixa.innerHTML = '';
+    const embaixo = caixa.scrollHeight - caixa.scrollTop - caixa.clientHeight < 60;
+    caixa.insertAdjacentHTML('beforeend', novas.map((m) => `<div class="msg ${m.minha ? 'minha' : ''}">
+      ${!m.minha && chat.com === 'equipe' ? `<small class="msg-autor">${esc(m.autor)}</small>` : ''}
+      <div class="msg-texto">${esc(m.texto).replace(/\n/g, '<br>')}</div><small class="msg-hora">${horaMsg(m.criado_em)}</small></div>`).join(''));
+    chat.ultimo = novas.at(-1).id;
+    if (embaixo || novas.some((m) => m.minha) || novas.length === caixa.children.length) caixa.scrollTop = caixa.scrollHeight;
+    contarNaoLidas();
+  }
+}
+
 // ---------- Tempo real ----------
 // A cada 10 s pergunta ao servidor se algo mudou (lote lançado, conferido, XML enviado, entrega marcada).
 // Telas de acompanhamento se redesenham sozinhas; nas de trabalho (Faturamento, Gestão) aparece "Atualizar".
@@ -266,6 +359,7 @@ const ocupado = () => document.querySelector('.fundo-modal')
   || ($('#revisao') && $('#revisao').innerHTML.trim()) || ($('#x-revisao') && $('#x-revisao').innerHTML.trim());
 async function verificarMudancas() {
   if (!estado.usuario || estado.usuario.trocarSenha || document.hidden) return;
+  contarNaoLidas();
   let r;
   try { r = await api('/api/versao'); } catch { return; }
   if (vivo.versao === null) { vivo.versao = r.versao; mostrarVivo(`Ao vivo · atualizado às ${horaAgora()}`); return; }

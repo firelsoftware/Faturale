@@ -369,3 +369,42 @@ body:has(.faixa-demo) #ao-vivo { bottom: 64px; }
 /* Aba Convênios: os da própria pessoa destacados na lista completa */
 tr.linha-minha td { background: var(--azul-suave); }
 tr.linha-minha td:first-child { box-shadow: inset 3px 0 0 var(--azul); }
+
+/* ---------- Mensagens ---------- */
+#chat-botao { position: fixed; right: 16px; bottom: 16px; z-index: 46; width: 52px; height: 52px; border-radius: 50%; border: 0; cursor: pointer;
+  background: var(--azul); color: #fff; display: grid; place-items: center; box-shadow: 0 6px 20px rgba(31, 107, 255, .35); }
+#chat-botao svg { width: 24px; height: 24px; }
+#chat-botao:hover { background: #1557d8; }
+.chat-conta { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--vermelho); color: #fff; font-size: 11px; font-weight: 700;
+  display: inline-grid; place-items: center; }
+#chat-botao .chat-conta { position: absolute; top: -4px; right: -4px; box-shadow: 0 0 0 2px #fff; }
+#ao-vivo { right: 80px; bottom: 26px; }
+body:has(.faixa-demo) #chat-botao { bottom: 64px; }
+body:has(.faixa-demo) #ao-vivo { bottom: 74px; }
+#chat { position: fixed; right: 16px; bottom: 80px; z-index: 47; width: 360px; height: min(540px, calc(100vh - 110px)); background: #fff;
+  border: 1px solid var(--borda); border-radius: 16px; box-shadow: 0 20px 60px rgba(5, 13, 31, .25); display: flex; flex-direction: column; overflow: hidden; }
+body:has(.faixa-demo) #chat { bottom: 128px; height: min(520px, calc(100vh - 150px)); }
+#chat header { display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: var(--navy-800); color: #fff; }
+#chat header b { flex: 1; font-size: 14px; }
+#chat header button { background: none; border: 0; color: var(--prata); font-size: 22px; line-height: 1; cursor: pointer; padding: 0 4px; }
+#chat-corpo { flex: 1; overflow: auto; display: flex; flex-direction: column; min-height: 0; }
+.chat-lista { list-style: none; margin: 0; padding: 4px 0; }
+.chat-lista li { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #f0f3f8; }
+.chat-lista li:hover { background: var(--azul-suave); }
+.chat-lista li > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.chat-lista li small { color: var(--texto-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-lista .avatar { width: 36px; height: 36px; margin: 0; font-size: 15px; color: #fff; flex: none; }
+.chat-lista .avatar.equipe { background: var(--navy-700); }
+.chat-msgs { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--fundo); }
+.msg { max-width: 80%; align-self: flex-start; display: flex; flex-direction: column; gap: 2px; }
+.msg.minha { align-self: flex-end; align-items: flex-end; }
+.msg-texto { background: #fff; border: 1px solid var(--borda); padding: 8px 11px; border-radius: 12px 12px 12px 4px; font-size: 13.5px; line-height: 1.4; overflow-wrap: anywhere; }
+.msg.minha .msg-texto { background: var(--azul); color: #fff; border-color: var(--azul); border-radius: 12px 12px 4px 12px; }
+.msg-autor { font-size: 11px; font-weight: 700; color: var(--azul); padding-left: 4px; }
+.msg-hora { font-size: 10.5px; color: var(--texto-2); padding: 0 4px; }
+#chat-form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--borda); background: #fff; }
+#chat-form textarea { resize: none; flex: 1; max-height: 100px; }
+@media (max-width: 760px) {
+  #chat { left: 8px; right: 8px; width: auto; bottom: 76px; height: calc(100vh - 160px); }
+}
+@media print { #chat, #chat-botao { display: none !important; } }

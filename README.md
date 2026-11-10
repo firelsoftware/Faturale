@@ -115,6 +115,9 @@ demonstração** tira os lotes fictícios. Para começar do zero, apague a pasta
 - **Função de cada pessoa** — no cadastro (Gestão → Usuários): Faturamento, Envio de XML ou as
   duas. Na distribuição dos convênios, "quem fatura" só lista quem fatura e "quem passa o XML" só
   quem passa XML. Quem é só XML não vê a aba Faturamento (e vice-versa).
+- **Mensagens** — botão azul no canto de todas as telas: conversa "Equipe toda" e conversas
+  individuais com cada pessoa (só as duas pessoas veem). Número vermelho com as não lidas;
+  mensagens novas chegam a cada 4 s com a conversa aberta.
 - **Gestão** — lotes da equipe (conferir, devolver com motivo, editar, excluir, filtro por situação
   do XML) e usuários.
 - **Coordenação**
