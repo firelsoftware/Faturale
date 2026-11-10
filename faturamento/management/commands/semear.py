@@ -1,4 +1,5 @@
-"""python manage.py semear — cria a equipe, os convênios e os dados de demonstração.
+"""python manage.py semear — cria a equipe, os convênios, a divisão de XML, os prazos e o calendário.
+Com --demo cria também lotes e envios fictícios.
 
 Pode rodar quantas vezes quiser: só cria o que ainda não existe e nunca
 desfaz o que a coordenação já mudou pela tela.
@@ -116,6 +117,9 @@ def normalizar(s):
 class Command(BaseCommand):
     help = 'Cria a equipe, os convênios e os dados de demonstração (só o que faltar).'
 
+    def add_arguments(self, parser):
+        parser.add_argument('--demo', action='store_true', help='também cria lotes e envios fictícios (demonstração)')
+
     @transaction.atomic
     def handle(self, *args, **opts):
         pessoas = {}
@@ -145,17 +149,18 @@ class Command(BaseCommand):
                     if not c.responsavel_xml_id:
                         c.responsavel_xml = pessoas[login]
                         c.save()
-            # Unimed não está na planilha de XML: exemplo de convênio sem XML
-            convenio('Unimed').tem_xml = False
-            convenios[normalizar('Unimed')].save()
-            for login, nomes in FATURAMENTO.items():
-                for nome in nomes:
-                    c = convenio(nome)
-                    c.faturista = pessoas[login]
-                    c.save()
             for nome, (texto, _, _) in PORTAIS.items():
                 aplicar_prazo(convenio(nome), texto)
-            self.semear_demonstracao(pessoas, convenios)
+            # Dados fictícios só com --demo (o sistema de verdade começa sem lotes)
+            if opts.get('demo'):
+                convenio('Unimed').tem_xml = False  # exemplo de convênio sem XML
+                convenios[normalizar('Unimed')].save()
+                for login, nomes in FATURAMENTO.items():
+                    for nome in nomes:
+                        c = convenio(nome)
+                        c.faturista = pessoas[login]
+                        c.save()
+                self.semear_demonstracao(pessoas, convenios)
 
         # Calendário: só na primeira vez (depois a coordenação mantém pela tela)
         if not EntregaCalendario.objects.exists():

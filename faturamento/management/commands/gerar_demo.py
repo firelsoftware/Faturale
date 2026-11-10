@@ -68,6 +68,10 @@ class Command(BaseCommand):
                           'concluido': False, 'concluido_por_id': None} for e in EntregaCalendario.objects.all()],
             'feriados': [{'data': iso(f.data), 'descricao': f.descricao} for f in Feriado.objects.all()],
         }
+        if not dados['lotes'] and (destino / 'dados.json').exists():
+            # Banco de verdade sem dados fictícios: atualiza só as telas e mantém os dados da demonstração
+            self.stdout.write(self.style.WARNING('Sem lotes de demonstração no banco: mantive o docs/dados.json atual.'))
+            return
         (destino / 'dados.json').write_text(json.dumps(dados, ensure_ascii=False), encoding='utf-8')
         self.stdout.write(self.style.SUCCESS(
             f"Demonstração gerada em docs/: {len(dados['lotes'])} lotes, {len(dados['envios'])} envios, "
