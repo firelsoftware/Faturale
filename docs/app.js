@@ -66,10 +66,11 @@ const ICONES = {
   diretoria: '<rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/>',
   xml: '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>',
   calendario: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
+  convenios: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
 };
 const icone = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[n]}</svg>`;
-const NOMES_ABAS = { faturamento: 'Faturamento', xml: 'Envio de XML', calendario: 'Calendário', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
+const NOMES_ABAS = { faturamento: 'Faturamento', xml: 'Envio de XML', calendario: 'Calendário', convenios: 'Convênios', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
 
 // ---------- Estado ----------
 const estado = { usuario: null, convenios: [], faturistas: [], aba: null };
@@ -200,7 +201,7 @@ async function entrar() {
   const salva = location.hash.slice(1);
   // Abre na aba "mais alta" do perfil (diretor → Diretoria…). Faturista/XML: Faturamento se fatura
   // algum convênio, senão Envio de XML.
-  let aba = u.abas.filter((a) => a !== 'calendario').pop();
+  let aba = u.abas.filter((a) => !['calendario', 'convenios'].includes(a)).pop();
   if (u.perfil === 'faturista') aba = meusConvenios('faturista_id').length || !meusConvenios('xml_id').length ? 'faturamento' : 'xml';
   if (!u.abas.includes(aba)) aba = u.abas[0];
   abrirAba(u.abas.includes(salva) ? salva : aba);
@@ -216,7 +217,7 @@ function abrirAba(aba) {
   carregarAlertas();
   vivo.pendente = false;
   verificarMudancas();
-  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, gestao: telaGestao, producao: telaCoordenacao, coordenacao: telaCoordenacao, diretoria: telaDiretoria };
+  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, convenios: telaConvenios, gestao: telaGestao, producao: telaCoordenacao, coordenacao: telaCoordenacao, diretoria: telaDiretoria };
   tentar(telas[aba])();
 }
 
@@ -950,6 +951,69 @@ function adicionarNoDia(dia, feriados) {
     }
     fechar(); avisar('Calendário atualizado.'); telaCalendario();
   })));
+}
+
+// ---------- Aba: Convênios ----------
+// "Meus convênios": o que a pessoa fatura e o que ela passa de XML, com prazo e parceiro.
+// "Todos os convênios": a lista completa, só para consulta (quem muda é a coordenação).
+const estadoConv = { sub: '', busca: '', pessoa: '', xml: '' };
+
+function telaConvenios() {
+  const eu = estado.usuario;
+  const s = estadoConv;
+  const fatura = estado.convenios.filter((c) => c.ativo && c.faturista_id === eu.id);
+  const passaXml = estado.convenios.filter((c) => c.ativo && c.xml_id === eu.id);
+  if (!s.sub) s.sub = fatura.length || passaXml.length ? 'meus' : 'todos';
+  const ordenar = (l) => [...l].sort((a, b) => b.aberto_hoje - a.aberto_hoje || a.nome.localeCompare(b.nome));
+  const ninguem = '<span class="apagado">—</span>';
+  const xmlSelo = (c) => (c.tem_xml ? '<span class="selo xml-enviado">Tem XML</span>' : '<span class="selo xml-na">Sem XML</span>');
+
+  const tabelaMeus = (lista, parceiro) => (!lista.length ? '<div class="vazio">Nenhum convênio.</div>' : `<div class="tabela-caixa"><table>
+    <thead><tr><th>Convênio</th><th>Prazo do portal</th><th>XML</th><th>${parceiro === 'xml' ? 'Quem passa o XML' : 'Quem fatura'}</th></tr></thead>
+    <tbody>${ordenar(lista).map((c) => `<tr><td><b>${esc(c.nome)}</b></td><td>${prazo(c)}</td><td>${xmlSelo(c)}</td>
+      <td>${parceiro === 'xml' ? (c.tem_xml ? (c.responsavel_xml ? esc(c.responsavel_xml) : ninguem) : ninguem) : (c.faturista ? esc(c.faturista) : ninguem)}</td></tr>`).join('')}</tbody></table></div>`);
+
+  let corpo;
+  if (s.sub === 'meus') {
+    const abertos = [...new Set([...fatura, ...passaXml])].filter((c) => c.aberto_hoje);
+    corpo = `
+      <div class="kpis">
+        ${fatura.length || eu.funcao !== 'xml' ? `<div class="kpi"><span>Convênios que eu faturo</span><b>${fatura.length}</b></div>` : ''}
+        ${passaXml.length || eu.funcao !== 'faturamento' ? `<div class="kpi"><span>Em que passo o XML</span><b>${passaXml.length}</b></div>` : ''}
+        <div class="kpi ${abertos.length ? 'destaque' : ''}"><span>Portais abertos hoje</span><b>${abertos.length}</b><small>${abertos.map((c) => esc(c.nome)).join(', ') || 'nenhum'}</small></div>
+      </div>
+      ${eu.perfil !== 'faturista' || fatura.length || eu.funcao !== 'xml' ? `<div class="cartao"><h2>Convênios que eu faturo</h2>${tabelaMeus(fatura, 'xml')}</div>` : ''}
+      ${eu.perfil !== 'faturista' || passaXml.length || eu.funcao !== 'faturamento' ? `<div class="cartao"><h2>Convênios em que passo o XML</h2>${tabelaMeus(passaXml, 'fatura')}</div>` : ''}
+      <p class="apagado" style="font-size:12px">A divisão é feita pela coordenação. Se algum convênio estiver faltando ou sobrando, fale com ela.</p>`;
+  } else {
+    const termo = s.busca.trim().toLowerCase();
+    const lista = estado.convenios.filter((c) => c.ativo
+      && (!termo || c.nome.toLowerCase().includes(termo))
+      && (!s.pessoa || c.faturista_id === Number(s.pessoa) || c.xml_id === Number(s.pessoa))
+      && (!s.xml || String(Number(c.tem_xml)) === s.xml));
+    corpo = `<div class="cartao">
+      <div class="filtros">
+        <div class="campo"><label>Buscar</label><input id="cv-busca" value="${esc(s.busca)}" placeholder="Nome do convênio"></div>
+        <div class="campo"><label>Pessoa</label><select id="cv-pessoa">${opcoesPessoa(s.pessoa, 'Todas')}</select></div>
+        <div class="campo"><label>XML</label><select id="cv-xml"><option value="">Todos</option>
+          <option value="1" ${s.xml === '1' ? 'selected' : ''}>Com XML</option><option value="0" ${s.xml === '0' ? 'selected' : ''}>Sem XML</option></select></div>
+      </div>
+      <p class="apagado" style="margin:-4px 0 12px;font-size:12px">${lista.length} convênio(s) · os seus aparecem destacados</p>
+      <div class="tabela-caixa"><table>
+        <thead><tr><th>Convênio</th><th>Quem fatura</th><th>Quem passa o XML</th><th>XML</th><th>Prazo do portal</th></tr></thead>
+        <tbody>${lista.map((c) => `<tr class="${c.faturista_id === eu.id || c.xml_id === eu.id ? 'linha-minha' : ''}"><td><b>${esc(c.nome)}</b></td>
+          <td>${c.faturista ? esc(c.faturista) : ninguem}</td><td>${c.tem_xml ? (c.responsavel_xml ? esc(c.responsavel_xml) : ninguem) : ninguem}</td>
+          <td>${xmlSelo(c)}</td><td>${prazo(c)}</td></tr>`).join('') || '<tr><td colspan="5" class="vazio">Nenhum convênio nesse filtro.</td></tr>'}</tbody></table></div></div>`;
+  }
+
+  $('#conteudo').innerHTML = `
+    <div class="topo"><div><h1>Convênios</h1><p>Os convênios de cada pessoa, segundo a divisão da coordenação, e a lista completa.</p></div></div>
+    <div class="subabas">${[['meus', 'Meus convênios'], ['todos', 'Todos os convênios']].map(([k, v]) => `<button data-sub="${k}" class="${s.sub === k ? 'ativa' : ''}">${v}</button>`).join('')}</div>
+    ${corpo}`;
+  $('.subabas').addEventListener('click', (e) => { const b = e.target.closest('[data-sub]'); if (b) { s.sub = b.dataset.sub; telaConvenios(); } });
+  $('#cv-busca')?.addEventListener('input', (e) => { s.busca = e.target.value; const pos = e.target.selectionStart; telaConvenios(); const i = $('#cv-busca'); i.focus(); i.setSelectionRange(pos, pos); });
+  $('#cv-pessoa')?.addEventListener('change', (e) => { s.pessoa = e.target.value; telaConvenios(); });
+  $('#cv-xml')?.addEventListener('change', (e) => { s.xml = e.target.value; telaConvenios(); });
 }
 
 // ---------- Aba: Gestão ----------

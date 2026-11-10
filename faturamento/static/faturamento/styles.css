@@ -354,7 +354,7 @@ td .acoes .btn-mini { padding: 4px 8px; }
   .kpi b { font-size: 18px; }
   .cartao { padding: 14px; }
   .cartao h2 { font-size: 14px; }
-  .subabas { overflow-x: auto; flex-wrap: nowrap; }
+  .subabas { overflow-x: auto; overflow-y: hidden; flex-wrap: nowrap; padding-bottom: 1px; }
   .subabas button { white-space: nowrap; }
   .faixa-demo { left: 8px; right: 8px; transform: none; justify-content: space-between; border-radius: 12px; }
   .modal { padding: 16px; }
@@ -365,3 +365,7 @@ td .acoes .btn-mini { padding: 4px 8px; }
   .tabela-caixa tbody td:first-child { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; }
 }
 body:has(.faixa-demo) #ao-vivo { bottom: 64px; }
+
+/* Aba Convênios: os da própria pessoa destacados na lista completa */
+tr.linha-minha td { background: var(--azul-suave); }
+tr.linha-minha td:first-child { box-shadow: inset 3px 0 0 var(--azul); }

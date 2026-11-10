@@ -18,10 +18,10 @@
   const erro = (m, s = 400) => json({ erro: m }, s);
   const novoId = (lista) => Math.max(0, ...lista.map((x) => x.id)) + 1;
   const ABAS = {
-    faturista: ['faturamento', 'xml', 'calendario'],
-    supervisora: ['faturamento', 'xml', 'calendario', 'gestao', 'producao'],
-    coordenadora: ['faturamento', 'xml', 'calendario', 'gestao', 'producao', 'coordenacao'],
-    diretor: ['faturamento', 'xml', 'calendario', 'gestao', 'producao', 'coordenacao', 'diretoria'],
+    faturista: ['faturamento', 'xml', 'calendario', 'convenios'],
+    supervisora: ['faturamento', 'xml', 'calendario', 'convenios', 'gestao', 'producao'],
+    coordenadora: ['faturamento', 'xml', 'calendario', 'convenios', 'gestao', 'producao', 'coordenacao'],
+    diretor: ['faturamento', 'xml', 'calendario', 'convenios', 'gestao', 'producao', 'coordenacao', 'diretoria'],
   };
   const salvar = () => { try { localStorage.setItem(CHAVE, JSON.stringify(db)); } catch {} };
 
