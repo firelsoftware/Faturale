@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/calendario/proximos', v.calendario_proximos),
     path('api/calendario/feriado', v.feriado),
     path('api/calendario/<int:pk>', v.entrega),
+    path('api/minha-producao', v.minha_producao),
     path('api/relatorios', v.relatorios),
     path('api/relatorios/producao', v.producao),
     path('api/relatorios/csv', v.relatorio_csv),

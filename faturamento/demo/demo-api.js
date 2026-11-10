@@ -18,10 +18,10 @@
   const erro = (m, s = 400) => json({ erro: m }, s);
   const novoId = (lista) => Math.max(0, ...lista.map((x) => x.id)) + 1;
   const ABAS = {
-    faturista: ['faturamento', 'xml', 'calendario', 'convenios'],
-    supervisora: ['faturamento', 'xml', 'calendario', 'convenios', 'gestao', 'producao'],
-    coordenadora: ['faturamento', 'xml', 'calendario', 'convenios', 'gestao', 'producao', 'coordenacao'],
-    diretor: ['faturamento', 'xml', 'calendario', 'convenios', 'gestao', 'producao', 'coordenacao', 'diretoria'],
+    faturista: ['faturamento', 'minha', 'xml', 'calendario', 'convenios'],
+    supervisora: ['faturamento', 'minha', 'xml', 'calendario', 'convenios', 'gestao', 'producao'],
+    coordenadora: ['faturamento', 'minha', 'xml', 'calendario', 'convenios', 'gestao', 'producao', 'coordenacao'],
+    diretor: ['faturamento', 'minha', 'xml', 'calendario', 'convenios', 'gestao', 'producao', 'coordenacao', 'diretoria'],
   };
   const salvar = () => { try { localStorage.setItem(CHAVE, JSON.stringify(db)); } catch {} };
 
@@ -412,6 +412,40 @@
     }
 
     if (r0 === 'versao') return json({ versao: `${db.lotes.length}:${db.envios.length}:${db.entregas.filter((e) => e.concluido).length}:${JSON.stringify(db.lotes.map((l) => l.status)).length}` });
+
+    if (r0 === 'minha-producao') {
+      const agora = new Date(`${hoje()}T12:00:00`);
+      const seg = new Date(agora); seg.setDate(agora.getDate() - ((agora.getDay() + 6) % 7));
+      const per = { hoje: hoje(), semana: iso(seg), mes: hoje().slice(0, 8) + '01', ano: hoje().slice(0, 5) + '01-01' };
+      const lotes = db.lotes.filter((l) => l.faturista_id === u.id && l.data_lancamento >= per.ano).sort((a2, b) => b.data_lancamento.localeCompare(a2.data_lancamento) || b.id - a2.id);
+      const envios = db.envios.filter((e) => e.responsavel_id === u.id && e.data_envio >= per.ano).sort((a2, b) => b.data_envio.localeCompare(a2.data_envio) || b.id - a2.id);
+      const loteDe = (e) => db.lotes.find((l) => l.id === e.lote_id);
+      const vEnv = (e) => loteDe(e)?.valor_total ?? e.valor_protocolo ?? 0;
+      const gEnv = (e) => loteDe(e)?.qtd_guias ?? 0;
+      const r2 = (v) => Math.round(v * 100) / 100;
+      const somaL = (l) => ({ qtd: l.length, guias: l.reduce((a2, x) => a2 + x.qtd_guias, 0), valor: r2(l.reduce((a2, x) => a2 + x.valor_total, 0)) });
+      const somaE = (l) => ({ qtd: l.length, guias: l.reduce((a2, x) => a2 + gEnv(x), 0), valor: r2(l.reduce((a2, x) => a2 + vEnv(x), 0)) });
+      const dias = [];
+      for (let d = new Date(`${per.mes}T12:00:00`); iso(d) <= hoje(); d.setDate(d.getDate() + 1)) dias.push(iso(d));
+      const porConv = (itens, nomeF, valorF) => {
+        const g = {};
+        for (const i of itens) { const k = nomeF(i); g[k] ||= { grupo: k, qtd: 0, valor: 0 }; g[k].qtd++; g[k].valor = r2(g[k].valor + valorF(i)); }
+        return Object.values(g).sort((a2, b) => b.valor - a2.valor);
+      };
+      const lm = lotes.filter((l) => l.data_lancamento >= per.mes);
+      const em = envios.filter((e) => e.data_envio >= per.mes);
+      return json({
+        fatura: fazFat(u), xml: fazXml(u), hoje: hoje(),
+        lotes: Object.fromEntries(Object.entries(per).map(([k, d]) => [k, somaL(lotes.filter((l) => l.data_lancamento >= d))])),
+        xmls: Object.fromEntries(Object.entries(per).map(([k, d]) => [k, somaE(envios.filter((e) => e.data_envio >= d))])),
+        dias: dias.map((d) => ({ dia: d, lotes: r2(lm.filter((l) => l.data_lancamento === d).reduce((a2, l) => a2 + l.valor_total, 0)),
+          lotesQtd: lm.filter((l) => l.data_lancamento === d).length, xmls: em.filter((e) => e.data_envio === d).length })),
+        convenios: porConv(lm, (l) => conv(l.convenio_id).nome, (l) => l.valor_total),
+        conveniosXml: porConv(em, (e) => conv(e.convenio_id).nome, vEnv),
+        ultimosLotes: lotes.slice(0, 8).map((l) => ({ numero_lote: l.numero_lote, convenio: conv(l.convenio_id).nome, data: l.data_lancamento, guias: l.qtd_guias, valor: l.valor_total, status: l.status })),
+        ultimosXmls: envios.slice(0, 8).map((e) => ({ numero_lote: e.numero_lote, convenio: conv(e.convenio_id).nome, data: e.data_envio, guias: gEnv(e), valor: vEnv(e), amarrado: !!e.lote_id })),
+      });
+    }
 
     if (r0 === 'mensagens') {
       // Na demonstração as mensagens ficam neste navegador: troque de pessoa para ver a conversa do outro lado

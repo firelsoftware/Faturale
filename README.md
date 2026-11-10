@@ -118,6 +118,10 @@ demonstração** tira os lotes fictícios. Para começar do zero, apague a pasta
 - **Mensagens** — botão azul no canto de todas as telas: conversa "Equipe toda" e conversas
   individuais com cada pessoa (só as duas pessoas veem). Número vermelho com as não lidas;
   mensagens novas chegam a cada 4 s com a conversa aberta.
+- **Minha produção** — cada pessoa vê rapidamente o que produziu: hoje, semana, mês e ano (valor,
+  guias e lotes), gráfico dia a dia do mês, convênios do mês e últimos lançamentos. Conta os lotes
+  lançados (Faturamento) e os lotes de produção anexados no Envio de XML — lá, a produção vai para
+  quem anexou.
 - **Gestão** — lotes da equipe (conferir, devolver com motivo, editar, excluir, filtro por situação
   do XML) e usuários.
 - **Coordenação**

@@ -65,12 +65,13 @@ const ICONES = {
   producao: '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>',
   diretoria: '<rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/>',
   xml: '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/>',
+  minha: '<path d="M12 20V10M18 20V4M6 20v-4"/>',
   calendario: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
   convenios: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
 };
 const icone = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[n]}</svg>`;
-const NOMES_ABAS = { faturamento: 'Faturamento', xml: 'Envio de XML', calendario: 'Calendário', convenios: 'Convênios', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
+const NOMES_ABAS = { faturamento: 'Faturamento', minha: 'Minha produção', xml: 'Envio de XML', calendario: 'Calendário', convenios: 'Convênios', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
 
 // ---------- Estado ----------
 const estado = { usuario: null, convenios: [], faturistas: [], aba: null };
@@ -207,7 +208,7 @@ async function entrar() {
   const salva = location.hash.slice(1);
   // Abre na aba "mais alta" do perfil (diretor → Diretoria…). Faturista/XML: Faturamento se fatura
   // algum convênio, senão Envio de XML.
-  let aba = u.abas.filter((a) => !['calendario', 'convenios'].includes(a)).pop();
+  let aba = u.abas.filter((a) => !['calendario', 'convenios', 'minha'].includes(a)).pop();
   if (u.perfil === 'faturista') aba = meusConvenios('faturista_id').length || !meusConvenios('xml_id').length ? 'faturamento' : 'xml';
   if (!u.abas.includes(aba)) aba = u.abas[0];
   abrirAba(u.abas.includes(salva) ? salva : aba);
@@ -223,7 +224,7 @@ function abrirAba(aba) {
   carregarAlertas();
   vivo.pendente = false;
   verificarMudancas();
-  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, convenios: telaConvenios, gestao: telaGestao, producao: telaCoordenacao, coordenacao: telaCoordenacao, diretoria: telaDiretoria };
+  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, convenios: telaConvenios, minha: telaMinha, gestao: telaGestao, producao: telaCoordenacao, coordenacao: telaCoordenacao, diretoria: telaDiretoria };
   tentar(telas[aba])();
 }
 
@@ -387,7 +388,7 @@ async function buscarNovas() {
 // ---------- Tempo real ----------
 // A cada 10 s pergunta ao servidor se algo mudou (lote lançado, conferido, XML enviado, entrega marcada).
 // Telas de acompanhamento se redesenham sozinhas; nas de trabalho (Faturamento, Gestão) aparece "Atualizar".
-const AUTO = ['producao', 'coordenacao', 'diretoria', 'xml', 'calendario'];
+const AUTO = ['minha', 'producao', 'coordenacao', 'diretoria', 'xml', 'calendario'];
 const vivo = { versao: null, pendente: false };
 const horaAgora = () => new Date().toLocaleTimeString('pt-BR');
 function mostrarVivo(texto, comBotao = false) {
@@ -590,7 +591,8 @@ function quadroExtraidos(d) {
       ${item('Quem gerou', x.geradoPor ? `${esc(x.faturistaNome || x.geradoPor)} <small>(${esc(x.geradoPorOrigem)})</small>` : '')}
     </div>${lancar}</div>`;
 }
-function ligarLancarDoProtocolo(d, caixa, redesenhar) {
+// paraQuemAnexou: no Envio de XML a produção vai para quem anexou o arquivo (no Faturamento, para quem gerou o PDF)
+function ligarLancarDoProtocolo(d, caixa, redesenhar, paraQuemAnexou = false) {
   const b = caixa.querySelector('[data-lancar-lote]');
   if (!b) return;
   b.addEventListener('click', tentar(async () => {
@@ -602,13 +604,14 @@ function ligarLancarDoProtocolo(d, caixa, redesenhar) {
       numeroLote: x.numeroLote, convenioId: x.convenioId, convenioNome: x.convenioNome, convenioCodigo: x.convenioCodigo,
       qtdGuias: x.qtdGuias, guiasTexto: x.guiasTexto, valorTotal: x.valorTotal, competencia: x.competencia,
       periodoInicio: x.periodoInicio, periodoFim: x.periodoFim, tipo: x.tipo, prestador: x.prestador,
-      dataLancamento: hoje(), faturistaId: x.faturistaId, geradoPor: x.geradoPor } });
-    avisar(`Lote ${x.numeroLote} lançado${x.faturistaNome ? ` na produção de ${x.faturistaNome}` : ''}. Agora registre o protocolo.`);
+      dataLancamento: hoje(), faturistaId: paraQuemAnexou ? estado.usuario.id : x.faturistaId, geradoPor: x.geradoPor } });
+    const dono = paraQuemAnexou ? 'sua produção' : (x.faturistaNome ? `produção de ${x.faturistaNome}` : 'sua produção');
+    avisar(`Lote ${x.numeroLote} lançado na ${dono}. Agora registre o protocolo.`);
     await carregarListas();
     const conv = estado.convenios.find((c) => c.id === x.convenioId) || estado.convenios.find((c) => c.nome === x.convenioNome);
     Object.assign(d, { loteId: r.id, loteNaoLancado: false, convenioId: conv?.id ?? d.convenioId, numeroLote: x.numeroLote,
       candidatos: [{ id: r.id, numero_lote: x.numeroLote, convenio_id: conv?.id, convenio: conv?.nome || x.convenioNome,
-        faturista: x.faturistaNome || estado.usuario.nome, qtd_guias: x.qtdGuias, valor_total: x.valorTotal, data_lancamento: hoje() }] });
+        faturista: paraQuemAnexou ? estado.usuario.nome : (x.faturistaNome || estado.usuario.nome), qtd_guias: x.qtdGuias, valor_total: x.valorTotal, data_lancamento: hoje() }] });
     redesenhar(d);
   }));
 }
@@ -787,7 +790,7 @@ async function telaXml() {
   const f = filtroXml;
   const res = await api(`/api/xml/resumo?${qs({ responsavel: todos ? f.responsavel : '' })}`);
   $('#conteudo').innerHTML = `
-    <div class="topo"><div><h1>Envio de XML</h1><p>Anexe o protocolo do envio. O sistema acha o lote pelo número e amarra sozinho.</p></div>
+    <div class="topo"><div><h1>Envio de XML</h1><p>Depois de passar o XML no portal do convênio, anexe aqui o lote de produção. O sistema acha o lote pelo número, e conta na sua produção.</p></div>
       ${todos ? `<div class="campo" style="margin:0;min-width:220px"><label>Responsável pelo XML</label><select id="x-resp">${opcoesPessoa(f.responsavel, 'Toda a equipe')}</select></div>` : ''}</div>
     <div class="kpis">
       <div class="kpi destaque"><span>Lotes aguardando XML</span><b>${num(res.pendentes)}</b><small>${res.pendentesValor == null ? 'lançados pelo faturamento' : `${moeda(res.pendentesValor)} em lotes lançados`}</small></div>
@@ -796,11 +799,11 @@ async function telaXml() {
     </div>
     ${todos ? '' : cartaoConvenios('Convênios em que passo o XML', meusConvenios('xml_id'))}
     <div class="cartao">
-      <h2>Anexar protocolo do XML</h2>
+      <h2>Anexar lote de produção</h2>
       <label class="solta" id="x-solta">
         ${icone('upload')}
-        <b>Arraste o protocolo aqui</b>
-        <span>PDF, foto ou o próprio arquivo XML · o sistema procura o número do lote</span>
+        <b>Arraste aqui o lote de produção</b>
+        <span>PDF ou foto do lote (ou o arquivo XML) · o sistema lê os dados e procura o número do lote</span>
         <input type="file" accept=".pdf,.xml,.png,.jpg,.jpeg,application/pdf,text/xml,image/*" hidden id="x-arquivo">
       </label>
       <div id="x-revisao"></div>
@@ -827,7 +830,7 @@ async function telaXml() {
         ${todos ? `<td>${esc(l.responsavel_xml || '—')}</td>` : ''}<td>${dataBR(l.data_lancamento)}</td>
         <td class="num">${l.qtd_guias == null ? '—' : num(l.qtd_guias)}</td><td class="num">${l.valor_total == null ? '—' : moeda(l.valor_total)}</td>
         <td>${l.prazo_texto ? esc(l.prazo_texto) : '—'}${l.aberto_hoje ? ' <span class="selo conferido">aberto hoje</span>' : ''}</td>
-        <td><div class="acoes"><button class="btn btn-primario btn-mini" data-anexar>Anexar protocolo</button>
+        <td><div class="acoes"><button class="btn btn-primario btn-mini" data-anexar>Anexar lote</button>
           <button class="btn btn-claro btn-mini" data-marcar>Marcar enviado</button></div></td></tr>`).join('')}</tbody></table></div>`;
   });
   const carregarEnvios = tentar(async () => {
@@ -899,8 +902,8 @@ async function telaXml() {
       </div>
       <div class="campo"><label>Observação</label><textarea name="observacao" rows="2"></textarea></div>
       ${d.nomeArquivo ? `<p class="apagado" style="margin:0 0 12px">Arquivo: ${esc(d.nomeArquivo)}${d.tipo === 'ocr' ? ' · lido por OCR' : ''}</p>` : ''}
-      <div class="acoes"><button type="button" class="btn btn-claro" data-cancelar>Cancelar</button><button class="btn btn-primario">Registrar envio</button></div></form>`;
-    ligarLancarDoProtocolo(d, $('#x-revisao'), revisao);
+      <div class="acoes"><button type="button" class="btn btn-claro" data-cancelar>Cancelar</button><button class="btn btn-primario">Registrar (conta na minha produção)</button></div></form>`;
+    ligarLancarDoProtocolo(d, $('#x-revisao'), revisao, true);
     $('#x-revisao [data-cancelar]').addEventListener('click', () => { $('#x-revisao').innerHTML = ''; });
     $('#x-revisao form').addEventListener('submit', tentar(async (e) => {
       e.preventDefault();
@@ -952,6 +955,40 @@ async function telaXml() {
   }));
   carregarPendentes();
   carregarEnvios();
+}
+
+// ---------- Aba: Minha produção ----------
+// O faturista vê rapidamente o que produziu: lotes lançados (Faturamento) e lotes anexados (Envio de XML).
+async function telaMinha() {
+  const p = await api('/api/minha-producao');
+  const PER = [['hoje', 'Hoje'], ['semana', 'Nesta semana'], ['mes', 'Neste mês'], ['ano', 'Neste ano']];
+  const kpis = (dados, rotulo) => `<div class="kpis">${PER.map(([k, t], i) => `<div class="kpi ${i === 0 ? 'destaque' : ''}"><span>${t}</span>
+      <b>${moeda(dados[k].valor)}</b><small>${num(dados[k].guias)} guias · ${num(dados[k].qtd)} ${rotulo}</small></div>`).join('')}</div>`;
+  const maxDia = Math.max(1, ...p.dias.map((d) => (p.fatura ? d.lotes : d.xmls)));
+  const grafico = `<div class="dias-mes">${p.dias.map((d) => {
+    const v = p.fatura ? d.lotes : d.xmls;
+    const dt = new Date(`${d.dia}T12:00:00`);
+    const fds = dt.getDay() % 6 === 0;
+    return `<div class="dia-col ${d.dia === p.hoje ? 'hoje' : ''} ${fds ? 'fds' : ''}" title="${dataBR(d.dia)}: ${p.fatura ? `${moeda(d.lotes)} · ${d.lotesQtd} lote(s)` : ''}${p.xml ? ` · ${d.xmls} anexado(s)` : ''}">
+      <em>${v ? (p.fatura ? moedaCurta(v).replace('R$ ', '') : v) : ''}</em><div class="pilar" style="height:${(v / maxDia) * 100}%"></div><small>${dt.getDate()}</small></div>`;
+  }).join('')}</div>`;
+  const tabela = (linhas, xml) => (!linhas.length ? '<div class="vazio">Nada ainda.</div>' : `<div class="tabela-caixa"><table>
+    <thead><tr><th>Lote</th><th>Convênio</th><th>Data</th><th class="num">Guias</th><th class="num">Valor</th><th>${xml ? 'Situação' : 'Status'}</th></tr></thead>
+    <tbody>${linhas.map((l) => `<tr><td><b>${esc(l.numero_lote)}</b></td><td>${esc(l.convenio)}</td><td>${dataBR(l.data)}</td>
+      <td class="num">${l.guias ? num(l.guias) : '—'}</td><td class="num">${l.valor ? moeda(l.valor) : '—'}</td>
+      <td>${xml ? (l.amarrado ? '<span class="selo conferido">Amarrado</span>' : '<span class="selo lancado">Esperando o lote</span>') : `<span class="selo ${l.status}">${STATUS[l.status]}</span>`}</td></tr>`).join('')}</tbody></table></div>`);
+
+  $('#conteudo').innerHTML = `
+    <div class="topo"><div><h1>Minha produção</h1><p>O que você produziu, ${esc(estado.usuario.nome)}. Atualiza sozinho quando você lança ou anexa um lote.</p></div></div>
+    ${p.fatura ? `<h2 class="secao">Faturamento <small>lotes lançados na sua produção</small></h2>${kpis(p.lotes, 'lotes')}` : ''}
+    ${p.xml ? `<h2 class="secao">Envio de XML <small>lotes que você anexou</small></h2>${kpis(p.xmls, 'lotes anexados')}` : ''}
+    <div class="cartao"><h2>Neste mês, dia a dia <small class="apagado">${p.fatura ? 'valor lançado por dia' : 'lotes anexados por dia'}</small></h2>${grafico}</div>
+    <div class="duas">
+      ${p.fatura ? `<div class="cartao"><h2>Convênios do mês · faturamento</h2>${barras(p.convenios.map((c) => ({ grupo: c.grupo, valor: c.valor, guias: c.qtd })))}</div>` : ''}
+      ${p.xml ? `<div class="cartao"><h2>Convênios do mês · XML</h2>${barras(p.conveniosXml.map((c) => ({ grupo: c.grupo, valor: c.valor, guias: c.qtd })))}</div>` : ''}
+    </div>
+    ${p.fatura ? `<div class="cartao"><h2>Últimos lotes lançados</h2>${tabela(p.ultimosLotes, false)}</div>` : ''}
+    ${p.xml ? `<div class="cartao"><h2>Últimos lotes anexados (XML)</h2>${tabela(p.ultimosXmls, true)}</div>` : ''}`;
 }
 
 // ---------- Aba: Calendário de entregas ----------

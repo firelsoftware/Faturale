@@ -424,3 +424,15 @@ body:has(.faixa-demo) #chat { bottom: 128px; height: min(520px, calc(100vh - 150
 .extraidos-grade small { font-weight: 500; color: var(--texto-2); }
 .extraidos-acao { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding-top: 10px;
   border-top: 1px solid #c9dbff; font-size: 13px; color: var(--navy-700); }
+
+/* Minha produção */
+h2.secao { font-size: 15px; margin: 6px 0 10px; color: var(--navy-700); }
+h2.secao small { font-weight: 500; color: var(--texto-2); font-size: 12px; margin-left: 6px; }
+.dias-mes { display: flex; align-items: flex-end; gap: 4px; height: 170px; overflow-x: auto; padding-top: 18px; }
+.dia-col { flex: 1 0 22px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 4px; }
+.dia-col .pilar { width: 100%; max-width: 30px; min-height: 2px; border-radius: 5px 5px 2px 2px; background: linear-gradient(180deg, var(--azul-claro), var(--azul)); }
+.dia-col.fds .pilar { background: #d5deec; }
+.dia-col.hoje .pilar { background: linear-gradient(180deg, #2b3f70, var(--navy-700)); }
+.dia-col small { font-size: 10.5px; color: var(--texto-2); }
+.dia-col.hoje small { color: var(--azul); font-weight: 700; }
+.dia-col em { font-style: normal; font-size: 9.5px; font-weight: 600; white-space: nowrap; color: var(--texto); }
