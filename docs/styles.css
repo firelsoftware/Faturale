@@ -442,3 +442,29 @@ h2.secao small { font-weight: 500; color: var(--texto-2); font-size: 12px; margi
 .periodo > b { font-size: 14px; color: var(--navy-700); }
 .periodo label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; }
 .periodo input { width: auto; padding: 7px 9px; }
+
+/* ---------- Menu no topo, fixo ao rolar ---------- */
+.app { display: block; }
+.lateral { position: sticky; top: 0; z-index: 30; height: auto; flex-direction: row; align-items: center; gap: 18px;
+  padding: 8px 24px; box-shadow: 0 2px 12px rgba(5, 13, 31, .25); }
+.lateral .marca { border: 0; padding: 0; margin: 0; flex: none; }
+.lateral .marca img { width: 36px; }
+#abas { display: flex; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+#abas::-webkit-scrollbar { display: none; }
+.aba { width: auto; white-space: nowrap; padding: 9px 12px; border-radius: 8px; font-size: 13.5px; }
+.aba.ativa { background: rgba(31, 107, 255, .22); box-shadow: inset 0 -3px 0 var(--azul); }
+.aba.com-alerta::after { right: 4px; top: 7px; margin-top: 0; }
+.lateral .usuario { margin: 0; border: 0; padding: 0; display: flex; align-items: center; gap: 8px; flex: none; text-align: right; }
+.lateral .usuario > div { display: flex; flex-direction: column; line-height: 1.2; }
+.lateral .usuario button, .lateral .usuario #minha-senha, .lateral .usuario #sair { width: auto; margin: 0; padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+main { max-width: 1440px; margin: 0 auto; }
+@media (max-width: 1100px) {
+  .lateral .marca div { display: none; }
+}
+@media (max-width: 760px) {
+  .lateral { padding: 6px 10px; gap: 8px; }
+  .lateral .usuario > div, .lateral .usuario #minha-senha { display: none; }
+  .aba { padding: 8px 9px; font-size: 13px; }
+  .aba svg { display: none; }
+}
+@media print { .lateral { position: static; box-shadow: none; } }
