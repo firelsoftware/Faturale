@@ -145,7 +145,7 @@ Em [faturamento/extrator.py](faturamento/extrator.py), no modelo do relatório `
 |--------------|---------------------------------------------------------------------|
 | Nº do lote   | `PROTOCOLO: 361843-BRADESCO` → `361843`                              |
 | Convênio     | `Bradesco Saúde (635902)` → nome e código                            |
-| Guias        | `Total do protocolo 10/10` → conta o **maior** número                |
+| Guias        | `Total do protocolo 80/74` → conta o **menor** número (74 guias)     |
 | Valor        | maior valor da linha `Total do protocolo`                            |
 | Competência  | coluna `Refer` mais frequente (`11/26`)                              |
 | Quem gerou   | login do rodapé (`emmily.trindade`) — **mas** se houver um nome colado no protocolo lá em cima (`PROTOCOLO: 365118Larissa`), vale o de cima |
@@ -154,14 +154,14 @@ A **produção conta para quem gerou** o protocolo. O sistema liga o nome lido �
 (`emmily.trindade` → Emmily, `Larissa` → Larissa). Se o nome não estiver cadastrado, a tela avisa e
 deixa escolher. Quem subiu o arquivo fica registrado à parte.
 
-Regra das guias: para contar o menor do `X/Y`, rode com `FATURALE_REGRA_GUIAS=menor`.
+Regra das guias: no `X/Y` conta o menor (o maior é a contagem de itens). Para contar o maior, rode com `FATURALE_REGRA_GUIAS=maior`.
 
 ## Configuração
 
 | Variável                | Padrão  | Para quê                                           |
 |-------------------------|---------|----------------------------------------------------|
 | `FATURALE_MODO_DEMO`    | `1`     | `0` passa a exigir usuário e senha                 |
-| `FATURALE_REGRA_GUIAS`  | `maior` | `maior` ou `menor` no `X/Y` das guias              |
+| `FATURALE_REGRA_GUIAS`  | `menor` | `menor` ou `maior` no `X/Y` das guias              |
 | `DJANGO_SECRET_KEY`     | (demo)  | Trocar antes de usar com dados reais               |
 | `DJANGO_DEBUG`          | `1`     | `0` em produção                                    |
 | `DJANGO_ALLOWED_HOSTS`  | localhost | Endereços que podem acessar                      |

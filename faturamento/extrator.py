@@ -120,8 +120,9 @@ def analisar(linhas: list[str]) -> dict:
         avisos.append('Valor total não encontrado.')
 
     # Conferência: linhas de guia listadas (atendimento + paciente + nº da guia)
-    guias_listadas = sum(1 for l in linhas if re.match(r'^\d{5,}\s+\D{3,}?\s+\d{6,}', l))
-    if guias_listadas and qtd_guias and guias_listadas != qtd_guias:
+    # (uma linha por paciente: nº do atendimento + nome; o nº da guia às vezes cai em outra linha)
+    guias_listadas = sum(1 for l in linhas if re.match(r'^\d{5,8}\s+[A-Za-zÀ-ÿ]', l))
+    if guias_listadas and qtd_guias and abs(guias_listadas - qtd_guias) > max(2, qtd_guias * 0.05):
         avisos.append(f'O PDF lista {guias_listadas} guias, mas o total diz {guias_texto}. Confira.')
 
     # Competência: o "Refer" (MM/AA) mais frequente; senão, o mês do período

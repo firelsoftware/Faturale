@@ -155,8 +155,8 @@ MEDIA_URL = '/arquivos/'
 DATA_UPLOAD_MAX_MEMORY_SIZE = 20 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 20 * 1024 * 1024
 
-# Regra da quantidade de guias quando o PDF traz "X/Y" (ex.: 10/07): 'maior' ou 'menor'.
-FATURALE_REGRA_GUIAS = os.environ.get('FATURALE_REGRA_GUIAS', 'maior')
+# Regra da quantidade de guias quando o PDF traz "X/Y" (ex.: 80/74 → 74 guias; o maior é a contagem de itens).
+FATURALE_REGRA_GUIAS = os.environ.get('FATURALE_REGRA_GUIAS', 'menor')
 
 # Modo demonstração: entra escolhendo a pessoa, sem senha. Desligue com FATURALE_MODO_DEMO=0.
 FATURALE_MODO_DEMO = os.environ.get('FATURALE_MODO_DEMO', '1') == '1'

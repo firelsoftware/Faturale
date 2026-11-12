@@ -207,7 +207,7 @@
     let guiasTexto = '', qtdGuias = 0, valorTotal = 0;
     const lt = linhas.find((l) => /Total\s+do\s+protocolo/i.test(l)) || '';
     const fr = lt.match(/(\d+)\s*\/\s*(\d+)/);
-    if (fr) { guiasTexto = `${fr[1]}/${fr[2]}`; qtdGuias = Math.max(Number(fr[1]), Number(fr[2])); }
+    if (fr) { guiasTexto = `${fr[1]}/${fr[2]}`; qtdGuias = Math.min(Number(fr[1]), Number(fr[2])); } // 80/74 → 74 guias
     const vals = (lt.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g) || []).map(paraNumero);
     if (vals.length) valorTotal = Math.max(...vals);
     if (!qtdGuias) avisos.push('Quantidade de guias não encontrada.');
