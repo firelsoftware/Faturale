@@ -214,6 +214,7 @@ async function entrar() {
   abrirAba(u.abas.includes(salva) ? salva : aba);
 }
 $('#abas').addEventListener('click', (e) => { const b = e.target.closest('[data-aba]'); if (b) abrirAba(b.dataset.aba); });
+document.addEventListener('click', (e) => { const l = e.target.closest('[data-ir-aba]'); if (l) { e.preventDefault(); abrirAba(l.dataset.irAba); } });
 
 function abrirAba(aba) {
   estado.aba = aba;
@@ -620,18 +621,8 @@ function ligarLancarDoProtocolo(d, caixa, redesenhar, paraQuemAnexou = false) {
 async function telaFaturamento() {
   const eu = estado.usuario;
   const meu = veTodos() ? { faturista: eu.id } : {};
-  const per = estadoPeriodo;
-  const prod = await api(`/api/relatorios?${qs({ ...meu, inicio: per.inicio, fim: per.fim })}`);
-  const t = prod.totais;
   $('#conteudo').innerHTML = `
-    <div class="topo"><div><h1>Fatura</h1><p>Olá, ${esc(eu.nome)}. Jogue aqui o arquivo do lote (o PDF do protocolo do lote) e confira os dados antes de salvar. Conta na sua produção de fatura.</p></div></div>
-    ${barraPeriodo('Minha produção')}
-    <div class="kpis">
-      <div class="kpi destaque"><span>Valor · ${esc(rotuloPeriodo())}</span><b>${moeda(t.valor)}</b></div>
-      <div class="kpi"><span>Guias</span><b>${num(t.guias)}</b></div>
-      <div class="kpi"><span>Lotes</span><b>${num(t.lotes)}</b></div>
-    </div>
-    ${cartaoConvenios('Convênios que eu faturo', meusConvenios('faturista_id'))}
+    <div class="topo"><div><h1>Fatura</h1><p>Olá, ${esc(eu.nome)}. Jogue o arquivo do lote (o PDF do protocolo do lote) e confira os dados antes de salvar. Sua produção fica em <a href="#minha" data-ir-aba="minha">Minha produção</a>.</p></div></div>
     <div class="cartao">
       <h2>Arquivo do lote · Fatura</h2>
       <label class="solta" id="solta">
@@ -661,9 +652,9 @@ async function telaFaturamento() {
         <div class="campo"><label>Buscar lote</label><input id="f-busca" placeholder="Nº do lote"></div>
       </div>
       <div id="lista"></div>
-    </div>`;
+    </div>
+    ${cartaoConvenios('Convênios que eu faturo', meusConvenios('faturista_id'))}`;
 
-  ligarPeriodo(telaFaturamento);
   let lotes = [];
   const carregar = tentar(async () => {
     lotes = await api(`/api/lotes?${qs({ ...meu, meus: 1, competencia: $('#f-comp').value, convenio: $('#f-conv').value, status: $('#f-status').value, busca: $('#f-busca').value })}`);
@@ -795,12 +786,6 @@ async function telaXml() {
   $('#conteudo').innerHTML = `
     <div class="topo"><div><h1>XML</h1><p>Depois de passar o XML no portal do convênio, jogue aqui o mesmo arquivo do lote (o PDF do protocolo do lote). Conta na sua produção de XML.</p></div>
       ${todos ? `<div class="campo" style="margin:0;min-width:220px"><label>Responsável pelo XML</label><select id="x-resp">${opcoesPessoa(f.responsavel, 'Toda a equipe')}</select></div>` : ''}</div>
-    <div class="kpis">
-      <div class="kpi destaque"><span>Lotes aguardando XML</span><b>${num(res.pendentes)}</b><small>${res.pendentesValor == null ? 'lançados pelo faturamento' : `${moeda(res.pendentesValor)} em lotes lançados`}</small></div>
-      <div class="kpi"><span>XML enviados no mês</span><b>${num(res.enviadosMes)}</b></div>
-      <div class="kpi"><span>Ainda não lançados na Fatura</span><b>${num(res.aguardandoLote)}</b><small>já contam na sua produção de XML</small></div>
-    </div>
-    ${todos ? '' : cartaoConvenios('Convênios em que passo o XML', meusConvenios('xml_id'))}
     <div class="cartao">
       <h2>Arquivo do lote · XML</h2>
       <label class="solta" id="x-solta">
@@ -810,6 +795,11 @@ async function telaXml() {
         <input type="file" accept=".pdf,.xml,.png,.jpg,.jpeg,application/pdf,text/xml,image/*" hidden id="x-arquivo">
       </label>
       <div id="x-revisao"></div>
+    </div>
+    <div class="kpis">
+      <div class="kpi destaque"><span>Lotes aguardando XML</span><b>${num(res.pendentes)}</b><small>${res.pendentesValor == null ? 'lançados pelo faturamento' : `${moeda(res.pendentesValor)} em lotes lançados`}</small></div>
+      <div class="kpi"><span>XML enviados no mês</span><b>${num(res.enviadosMes)}</b></div>
+      <div class="kpi"><span>Ainda não lançados na Fatura</span><b>${num(res.aguardandoLote)}</b><small>já contam na sua produção de XML</small></div>
     </div>
     <div class="cartao"><h2>Lotes lançados aguardando XML</h2><div id="x-pend"></div></div>
     <div class="cartao">
@@ -821,7 +811,8 @@ async function telaXml() {
         <div class="campo"><label>Buscar</label><input id="x-busca" placeholder="Nº do lote ou protocolo" value="${esc(f.busca)}"></div>
       </div>
       <div id="x-envios"></div>
-    </div>`;
+    </div>
+    ${todos ? '' : cartaoConvenios('Convênios em que passo o XML', meusConvenios('xml_id'))}`;
 
   let pendentes = [];
   let envios = [];
