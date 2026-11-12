@@ -21,7 +21,7 @@ const valorBR = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionD
 const PERFIS = { faturista: 'Faturista / XML', supervisora: 'Supervisora', coordenadora: 'Coordenadora', diretor: 'Diretor' };
 const STATUS = { lancado: 'Lançado', conferido: 'Conferido', devolvido: 'Devolvido' };
 const XML = { enviado: 'XML enviado', pendente: 'XML pendente', na: 'Sem XML' };
-const FUNCOES = { faturamento: 'Faturamento', xml: 'Envio de XML', ambos: 'Faturamento e XML' };
+const FUNCOES = { faturamento: 'Fatura', xml: 'XML', ambos: 'Fatura e XML' };
 const cookie = (nome) => document.cookie.split('; ').find((c) => c.startsWith(`${nome}=`))?.split('=')[1];
 
 async function api(url, opcoes = {}) {
@@ -71,7 +71,7 @@ const ICONES = {
   upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
 };
 const icone = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[n]}</svg>`;
-const NOMES_ABAS = { faturamento: 'Faturamento', minha: 'Minha produção', xml: 'Envio de XML', calendario: 'Calendário', convenios: 'Convênios', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
+const NOMES_ABAS = { faturamento: 'Fatura', minha: 'Minha produção', xml: 'XML', calendario: 'Calendário', convenios: 'Convênios', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
 
 // ---------- Estado ----------
 const estado = { usuario: null, convenios: [], faturistas: [], aba: null };
@@ -575,9 +575,9 @@ function quadroExtraidos(d) {
   const item = (rotulo, valor) => (valor ? `<div><span>${rotulo}</span><b>${valor}</b></div>` : '');
   const lancar = d.loteNaoLancado
     ? (d.podeLancar
-      ? `<div class="extraidos-acao"><span>O lote <b>${esc(x.numeroLote)}</b> ainda não está lançado no Faturamento.</span>
+      ? `<div class="extraidos-acao"><span>O lote <b>${esc(x.numeroLote)}</b> ainda não está lançado na Fatura.</span>
           <button type="button" class="btn btn-primario btn-mini" data-lancar-lote>Lançar o lote com estes dados</button></div>`
-      : `<div class="extraidos-acao"><span>O lote <b>${esc(x.numeroLote)}</b> ainda não está lançado no Faturamento. Pode registrar: o protocolo fica guardado e se liga sozinho ao lote quando ${esc(x.faturistaNome || 'o faturista')} lançar.</span></div>`)
+      : `<div class="extraidos-acao"><span>O lote <b>${esc(x.numeroLote)}</b> ainda não está lançado na Fatura. Pode registrar normalmente: conta na sua produção de XML, e quando a Fatura lançar esse lote os dois se ligam sozinhos.</span></div>`)
     : '';
   return `<div class="extraidos"><h3>Dados lidos do arquivo${d.tipo === 'ocr' ? ' <small>(por OCR, confira)</small>' : ''}</h3>
     <div class="extraidos-grade">
@@ -597,8 +597,8 @@ function ligarLancarDoProtocolo(d, caixa, redesenhar, paraQuemAnexou = false) {
   if (!b) return;
   b.addEventListener('click', tentar(async () => {
     const x = d.extraidos;
-    if (!x.convenioId && !x.convenioNome) throw new Error('Não deu para ler o convênio. Lance o lote pelo Faturamento.');
-    if (!x.qtdGuias || x.valorTotal == null || !x.competencia) throw new Error('Faltam guias, valor ou competência no arquivo. Lance o lote pelo Faturamento.');
+    if (!x.convenioId && !x.convenioNome) throw new Error('Não deu para ler o convênio. Lance o lote pela aba Fatura.');
+    if (!x.qtdGuias || x.valorTotal == null || !x.competencia) throw new Error('Faltam guias, valor ou competência no arquivo. Lance o lote pela aba Fatura.');
     b.disabled = true;
     const r = await api('/api/lotes', { method: 'POST', corpo: {
       numeroLote: x.numeroLote, convenioId: x.convenioId, convenioNome: x.convenioNome, convenioCodigo: x.convenioCodigo,
@@ -627,14 +627,14 @@ async function telaFaturamento() {
   ]);
   const kpi = (t, r) => `<div class="kpi"><span>${t}</span><b>${moeda(r.totais.valor)}</b><small>${num(r.totais.guias)} guias · ${num(r.totais.lotes)} lotes</small></div>`;
   $('#conteudo').innerHTML = `
-    <div class="topo"><div><h1>Faturamento</h1><p>Olá, ${esc(eu.nome)}. Envie o protocolo do lote e confira os dados antes de salvar.</p></div></div>
+    <div class="topo"><div><h1>Fatura</h1><p>Olá, ${esc(eu.nome)}. Jogue aqui o arquivo do lote (o PDF do protocolo do lote) e confira os dados antes de salvar. Conta na sua produção de fatura.</p></div></div>
     <div class="kpis">${kpi('Minha produção hoje', dia)}${kpi('Neste mês', mes)}${kpi('Neste ano', ano)}</div>
     ${cartaoConvenios('Convênios que eu faturo', meusConvenios('faturista_id'))}
     <div class="cartao">
-      <h2>Novo lote</h2>
+      <h2>Arquivo do lote · Fatura</h2>
       <label class="solta" id="solta">
         ${icone('upload')}
-        <b>Arraste o protocolo do lote aqui (PDF ou foto)</b>
+        <b>Arraste aqui o arquivo do lote (PDF do protocolo)</b>
         <span>ou clique para escolher · lê lote, convênio, guias, valor e quem gerou · escaneado ou foto passa por OCR</span>
         <input type="file" accept="application/pdf,.pdf,image/png,image/jpeg" hidden id="arquivo">
       </label>
@@ -790,7 +790,7 @@ async function telaXml() {
   const f = filtroXml;
   const res = await api(`/api/xml/resumo?${qs({ responsavel: todos ? f.responsavel : '' })}`);
   $('#conteudo').innerHTML = `
-    <div class="topo"><div><h1>Envio de XML</h1><p>Depois de passar o XML no portal do convênio, anexe aqui o lote de produção. O sistema acha o lote pelo número, e conta na sua produção.</p></div>
+    <div class="topo"><div><h1>XML</h1><p>Depois de passar o XML no portal do convênio, jogue aqui o mesmo arquivo do lote (o PDF do protocolo do lote). Conta na sua produção de XML.</p></div>
       ${todos ? `<div class="campo" style="margin:0;min-width:220px"><label>Responsável pelo XML</label><select id="x-resp">${opcoesPessoa(f.responsavel, 'Toda a equipe')}</select></div>` : ''}</div>
     <div class="kpis">
       <div class="kpi destaque"><span>Lotes aguardando XML</span><b>${num(res.pendentes)}</b><small>${res.pendentesValor == null ? 'lançados pelo faturamento' : `${moeda(res.pendentesValor)} em lotes lançados`}</small></div>
@@ -799,10 +799,10 @@ async function telaXml() {
     </div>
     ${todos ? '' : cartaoConvenios('Convênios em que passo o XML', meusConvenios('xml_id'))}
     <div class="cartao">
-      <h2>Anexar lote de produção</h2>
+      <h2>Arquivo do lote · XML</h2>
       <label class="solta" id="x-solta">
         ${icone('upload')}
-        <b>Arraste aqui o lote de produção</b>
+        <b>Arraste aqui o arquivo do lote (PDF do protocolo)</b>
         <span>PDF ou foto do lote (ou o arquivo XML) · o sistema lê os dados e procura o número do lote</span>
         <input type="file" accept=".pdf,.xml,.png,.jpg,.jpeg,application/pdf,text/xml,image/*" hidden id="x-arquivo">
       </label>
@@ -980,8 +980,8 @@ async function telaMinha() {
 
   $('#conteudo').innerHTML = `
     <div class="topo"><div><h1>Minha produção</h1><p>O que você produziu, ${esc(estado.usuario.nome)}. Atualiza sozinho quando você lança ou anexa um lote.</p></div></div>
-    ${p.fatura ? `<h2 class="secao">Faturamento <small>lotes lançados na sua produção</small></h2>${kpis(p.lotes, 'lotes')}` : ''}
-    ${p.xml ? `<h2 class="secao">Envio de XML <small>lotes que você anexou</small></h2>${kpis(p.xmls, 'lotes anexados')}` : ''}
+    ${p.fatura ? `<h2 class="secao">Fatura <small>lotes lançados na aba Fatura</small></h2>${kpis(p.lotes, 'lotes')}` : ''}
+    ${p.xml ? `<h2 class="secao">XML <small>lotes que você anexou na aba XML</small></h2>${kpis(p.xmls, 'lotes anexados')}` : ''}
     <div class="cartao"><h2>Neste mês, dia a dia <small class="apagado">${p.fatura ? 'valor lançado por dia' : 'lotes anexados por dia'}</small></h2>${grafico}</div>
     <div class="duas">
       ${p.fatura ? `<div class="cartao"><h2>Convênios do mês · faturamento</h2>${barras(p.convenios.map((c) => ({ grupo: c.grupo, valor: c.valor, guias: c.qtd })))}</div>` : ''}
@@ -1449,7 +1449,7 @@ function coordDivisao(caixa) {
   caixa.innerHTML = `
     <div class="acoes" style="margin-bottom:14px"><button class="btn btn-claro" onclick="print()">Imprimir</button></div>
     ${quadro('Envio de XML — divisão de convênios', 'xml_id', 'responsavel_xml', (c) => c.tem_xml)}
-    ${quadro('Faturamento — quem fatura cada convênio', 'faturista_id', 'faturista')}
+    ${quadro('Fatura — quem fatura cada convênio', 'faturista_id', 'faturista')}
     <div class="cartao"><h2>Convênios sem XML</h2>${semXml.length
       ? `<div class="chips">${semXml.map((c) => `<span class="chip"><b>${esc(c.nome)}</b></span>`).join('')}</div>`
       : '<div class="apagado">Todos os convênios ativos têm XML.</div>'}</div>`;
