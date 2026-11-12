@@ -798,7 +798,7 @@ async function telaXml() {
     <div class="kpis">
       <div class="kpi destaque"><span>Lotes aguardando XML</span><b>${num(res.pendentes)}</b><small>${res.pendentesValor == null ? 'lançados pelo faturamento' : `${moeda(res.pendentesValor)} em lotes lançados`}</small></div>
       <div class="kpi"><span>XML enviados no mês</span><b>${num(res.enviadosMes)}</b></div>
-      <div class="kpi"><span>Protocolos esperando o lote</span><b>${num(res.aguardandoLote)}</b><small>XML enviado antes do lançamento</small></div>
+      <div class="kpi"><span>Ainda não lançados na Fatura</span><b>${num(res.aguardandoLote)}</b><small>já contam na sua produção de XML</small></div>
     </div>
     ${todos ? '' : cartaoConvenios('Convênios em que passo o XML', meusConvenios('xml_id'))}
     <div class="cartao">
@@ -816,8 +816,8 @@ async function telaXml() {
       <h2>Envios registrados</h2>
       <div class="filtros">
         <div class="campo"><label>Situação</label><select id="x-sit">
-          <option value="">Todos</option><option value="amarrado" ${f.situacao === 'amarrado' ? 'selected' : ''}>Amarrado ao lote</option>
-          <option value="aguardando" ${f.situacao === 'aguardando' ? 'selected' : ''}>Esperando o lote</option></select></div>
+          <option value="">Todos</option><option value="amarrado" ${f.situacao === 'amarrado' ? 'selected' : ''}>Já lançado na Fatura</option>
+          <option value="aguardando" ${f.situacao === 'aguardando' ? 'selected' : ''}>Ainda não lançado na Fatura</option></select></div>
         <div class="campo"><label>Buscar</label><input id="x-busca" placeholder="Nº do lote ou protocolo" value="${esc(f.busca)}"></div>
       </div>
       <div id="x-envios"></div>
@@ -843,8 +843,8 @@ async function telaXml() {
       <tbody>${envios.map((e) => `<tr data-id="${e.id}"><td>${dataBR(e.data_envio)}</td>
         <td><b>${esc(e.numero_lote)}</b>${e.demo ? '<span class="selo demo">demo</span>' : ''}</td><td>${esc(e.convenio)}</td>
         ${todos ? `<td>${esc(e.responsavel)}</td>` : ''}
-        <td>${e.lote_id ? `<span class="selo conferido">Amarrado</span> <small class="apagado">${e.lote_valor == null ? '' : `${num(e.lote_guias)} guias · ${moeda(e.lote_valor)} · `}${esc(e.faturista)}</small>`
-          : '<span class="selo lancado">Esperando o lote</span>'}</td>
+        <td>${e.lote_id ? `<span class="selo conferido">Lançado na Fatura</span> <small class="apagado">${e.lote_valor == null ? '' : `${num(e.lote_guias)} guias · ${moeda(e.lote_valor)} · `}${esc(e.faturista)}</small>`
+          : '<span class="selo lancado" title="Já conta na produção de XML. Quando a Fatura lançar este lote, os dois se ligam sozinhos.">Ainda não lançado na Fatura</span>'}</td>
         <td>${esc(e.protocolo || '—')}${e.valor_protocolo != null ? `<br><small class="apagado">${moeda(e.valor_protocolo)}</small>` : ''}
           ${e.divergente ? '<br><span class="selo devolvido">valor diferente do lote</span>' : ''}</td>
         <td><div class="acoes">${e.arquivo ? `<a class="btn btn-claro btn-mini" href="/api/xml/${e.id}/arquivo" target="_blank">Arquivo</a>` : ''}
@@ -952,7 +952,7 @@ async function telaXml() {
       (el, fechar) => $('form', el).addEventListener('submit', tentar(async (ev) => {
         ev.preventDefault();
         const r = await api(`/api/xml/${env.id}`, { method: 'PUT', corpo: Object.fromEntries(new FormData(ev.target)) });
-        fechar(); avisar(r.amarrado ? 'Envio salvo e amarrado ao lote.' : 'Envio salvo. Ainda esperando o lote.'); recarregar();
+        fechar(); avisar(r.amarrado ? 'Envio salvo. O lote já está lançado na Fatura.' : 'Envio salvo. O lote ainda não foi lançado na Fatura.'); recarregar();
       })));
     }
   }));
@@ -984,7 +984,7 @@ async function telaMinha() {
     <thead><tr><th>Lote</th><th>Convênio</th><th>Data</th><th class="num">Guias</th><th class="num">Valor</th><th>${xml ? 'Situação' : 'Status'}</th></tr></thead>
     <tbody>${linhas.map((l) => `<tr><td><b>${esc(l.numero_lote)}</b></td><td>${esc(l.convenio)}</td><td>${dataBR(l.data)}</td>
       <td class="num">${l.guias ? num(l.guias) : '—'}</td><td class="num">${l.valor ? moeda(l.valor) : '—'}</td>
-      <td>${xml ? (l.amarrado ? '<span class="selo conferido">Amarrado</span>' : '<span class="selo lancado">Esperando o lote</span>') : `<span class="selo ${l.status}">${STATUS[l.status]}</span>`}</td></tr>`).join('')}</tbody></table></div>`);
+      <td>${xml ? (l.amarrado ? '<span class="selo conferido">Lançado na Fatura</span>' : '<span class="selo lancado">Ainda não lançado na Fatura</span>') : `<span class="selo ${l.status}">${STATUS[l.status]}</span>`}</td></tr>`).join('')}</tbody></table></div>`);
 
   $('#conteudo').innerHTML = `
     <div class="topo"><div><h1>Minha produção</h1><p>O que você produziu, ${esc(estado.usuario.nome)}. Escolha o período.</p></div></div>
