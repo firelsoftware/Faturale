@@ -36,11 +36,13 @@ class Command(BaseCommand):
         for nome in ('app.js', 'styles.css', 'logo-f.png'):
             html = html.replace(f"{{% static 'faturamento/{nome}' %}}", nome)
         html = html.replace(
-            '<script type="module" src="app.js"></script>',
+            '<script type="module" src="app.js?v={{ versao }}"></script>',
             '<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>\n'
-            '  <script src="demo-api.js"></script>\n'
-            '  <script type="module" src="app.js"></script>')
+            '  <script src="demo-api.js?v={{ versao }}"></script>\n'
+            '  <script type="module" src="app.js?v={{ versao }}"></script>')
         html = html.replace('<title>Faturale</title>', '<title>Faturale · demonstração</title>')
+        import time
+        html = html.replace('{{ versao }}', str(int(time.time())))  # força o navegador a baixar a versão nova
         (destino / 'index.html').write_text(html, encoding='utf-8')
         (destino / '.nojekyll').write_text('', encoding='utf-8')
 

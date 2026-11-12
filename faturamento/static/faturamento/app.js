@@ -620,15 +620,17 @@ function ligarLancarDoProtocolo(d, caixa, redesenhar, paraQuemAnexou = false) {
 async function telaFaturamento() {
   const eu = estado.usuario;
   const meu = veTodos() ? { faturista: eu.id } : {};
-  const [dia, mes, ano] = await Promise.all([
-    api(`/api/relatorios?${qs({ ...meu, inicio: hoje(), fim: hoje() })}`),
-    api(`/api/relatorios?${qs({ ...meu, inicio: inicioMes(), fim: hoje() })}`),
-    api(`/api/relatorios?${qs({ ...meu, inicio: inicioAno(), fim: hoje() })}`),
-  ]);
-  const kpi = (t, r) => `<div class="kpi"><span>${t}</span><b>${moeda(r.totais.valor)}</b><small>${num(r.totais.guias)} guias · ${num(r.totais.lotes)} lotes</small></div>`;
+  const per = estadoPeriodo;
+  const prod = await api(`/api/relatorios?${qs({ ...meu, inicio: per.inicio, fim: per.fim })}`);
+  const t = prod.totais;
   $('#conteudo').innerHTML = `
     <div class="topo"><div><h1>Fatura</h1><p>Olá, ${esc(eu.nome)}. Jogue aqui o arquivo do lote (o PDF do protocolo do lote) e confira os dados antes de salvar. Conta na sua produção de fatura.</p></div></div>
-    <div class="kpis">${kpi('Minha produção hoje', dia)}${kpi('Neste mês', mes)}${kpi('Neste ano', ano)}</div>
+    ${barraPeriodo('Minha produção')}
+    <div class="kpis">
+      <div class="kpi destaque"><span>Valor · ${esc(rotuloPeriodo())}</span><b>${moeda(t.valor)}</b></div>
+      <div class="kpi"><span>Guias</span><b>${num(t.guias)}</b></div>
+      <div class="kpi"><span>Lotes</span><b>${num(t.lotes)}</b></div>
+    </div>
     ${cartaoConvenios('Convênios que eu faturo', meusConvenios('faturista_id'))}
     <div class="cartao">
       <h2>Arquivo do lote · Fatura</h2>
@@ -661,6 +663,7 @@ async function telaFaturamento() {
       <div id="lista"></div>
     </div>`;
 
+  ligarPeriodo(telaFaturamento);
   let lotes = [];
   const carregar = tentar(async () => {
     lotes = await api(`/api/lotes?${qs({ ...meu, meus: 1, competencia: $('#f-comp').value, convenio: $('#f-conv').value, status: $('#f-status').value, busca: $('#f-busca').value })}`);
@@ -960,35 +963,73 @@ async function telaXml() {
 // ---------- Aba: Minha produção ----------
 // O faturista vê rapidamente o que produziu: lotes lançados (Faturamento) e lotes anexados (Envio de XML).
 async function telaMinha() {
-  const p = await api('/api/minha-producao');
-  const PER = [['hoje', 'Hoje'], ['semana', 'Nesta semana'], ['mes', 'Neste mês'], ['ano', 'Neste ano']];
-  const kpis = (dados, rotulo) => `<div class="kpis">${PER.map(([k, t], i) => `<div class="kpi ${i === 0 ? 'destaque' : ''}"><span>${t}</span>
-      <b>${moeda(dados[k].valor)}</b><small>${num(dados[k].guias)} guias · ${num(dados[k].qtd)} ${rotulo}</small></div>`).join('')}</div>`;
-  const maxDia = Math.max(1, ...p.dias.map((d) => (p.fatura ? d.lotes : d.xmls)));
-  const grafico = `<div class="dias-mes">${p.dias.map((d) => {
-    const v = p.fatura ? d.lotes : d.xmls;
-    const dt = new Date(`${d.dia}T12:00:00`);
-    const fds = dt.getDay() % 6 === 0;
-    return `<div class="dia-col ${d.dia === p.hoje ? 'hoje' : ''} ${fds ? 'fds' : ''}" title="${dataBR(d.dia)}: ${p.fatura ? `${moeda(d.lotes)} · ${d.lotesQtd} lote(s)` : ''}${p.xml ? ` · ${d.xmls} anexado(s)` : ''}">
-      <em>${v ? (p.fatura ? moedaCurta(v).replace('R$ ', '') : v) : ''}</em><div class="pilar" style="height:${(v / maxDia) * 100}%"></div><small>${dt.getDate()}</small></div>`;
+  const per = estadoPeriodo;
+  const p = await api(`/api/minha-producao?${qs({ inicio: per.inicio, fim: per.fim })}`);
+  const kpis = (d, rotulo) => `<div class="kpis">
+      <div class="kpi destaque"><span>Valor · ${esc(rotuloPeriodo())}</span><b>${moeda(d.valor)}</b></div>
+      <div class="kpi"><span>Guias</span><b>${num(d.guias)}</b></div>
+      <div class="kpi"><span>${rotulo}</span><b>${num(d.qtd)}</b></div>
+      <div class="kpi"><span>Valor médio por guia</span><b>${moeda(d.guias ? d.valor / d.guias : 0)}</b></div></div>`;
+  const valorDe = (g) => (p.fatura ? g.lotes : g.xmls);
+  const maxV = Math.max(1, ...p.serie.map(valorDe));
+  const rot = (k) => (p.porMes ? mesCurto(k) : `${Number(k.slice(8))}`);
+  const grafico = !p.serie.length ? '<div class="vazio">Sem produção no período.</div>' : `<div class="dias-mes">${p.serie.map((g) => {
+    const v = valorDe(g);
+    const fds = !p.porMes && new Date(`${g.periodo}T12:00:00`).getDay() % 6 === 0;
+    const atual = p.porMes ? g.periodo === p.hoje.slice(0, 7) : g.periodo === p.hoje;
+    return `<div class="dia-col ${atual ? 'hoje' : ''} ${fds ? 'fds' : ''}" title="${p.porMes ? mesCurto(g.periodo) : dataBR(g.periodo)}: ${p.fatura ? `${moeda(g.lotes)} · ${g.lotesQtd} lote(s)` : ''}${p.xml ? ` · ${g.xmls} anexado(s)` : ''}">
+      <em>${v ? (p.fatura ? moedaCurta(v).replace('R$ ', '') : v) : ''}</em><div class="pilar" style="height:${(v / maxV) * 100}%"></div><small>${rot(g.periodo)}</small></div>`;
   }).join('')}</div>`;
-  const tabela = (linhas, xml) => (!linhas.length ? '<div class="vazio">Nada ainda.</div>' : `<div class="tabela-caixa"><table>
+  const tabela = (linhas, xml) => (!linhas.length ? '<div class="vazio">Nada no período.</div>' : `<div class="tabela-caixa" style="max-height:460px;overflow:auto"><table>
     <thead><tr><th>Lote</th><th>Convênio</th><th>Data</th><th class="num">Guias</th><th class="num">Valor</th><th>${xml ? 'Situação' : 'Status'}</th></tr></thead>
     <tbody>${linhas.map((l) => `<tr><td><b>${esc(l.numero_lote)}</b></td><td>${esc(l.convenio)}</td><td>${dataBR(l.data)}</td>
       <td class="num">${l.guias ? num(l.guias) : '—'}</td><td class="num">${l.valor ? moeda(l.valor) : '—'}</td>
       <td>${xml ? (l.amarrado ? '<span class="selo conferido">Amarrado</span>' : '<span class="selo lancado">Esperando o lote</span>') : `<span class="selo ${l.status}">${STATUS[l.status]}</span>`}</td></tr>`).join('')}</tbody></table></div>`);
 
   $('#conteudo').innerHTML = `
-    <div class="topo"><div><h1>Minha produção</h1><p>O que você produziu, ${esc(estado.usuario.nome)}. Atualiza sozinho quando você lança ou anexa um lote.</p></div></div>
-    ${p.fatura ? `<h2 class="secao">Fatura <small>lotes lançados na aba Fatura</small></h2>${kpis(p.lotes, 'lotes')}` : ''}
-    ${p.xml ? `<h2 class="secao">XML <small>lotes que você anexou na aba XML</small></h2>${kpis(p.xmls, 'lotes anexados')}` : ''}
-    <div class="cartao"><h2>Neste mês, dia a dia <small class="apagado">${p.fatura ? 'valor lançado por dia' : 'lotes anexados por dia'}</small></h2>${grafico}</div>
+    <div class="topo"><div><h1>Minha produção</h1><p>O que você produziu, ${esc(estado.usuario.nome)}. Escolha o período.</p></div></div>
+    ${barraPeriodo()}
+    ${p.fatura ? `<h2 class="secao">Fatura <small>lotes lançados na aba Fatura</small></h2>${kpis(p.lotes, 'Lotes')}` : ''}
+    ${p.xml ? `<h2 class="secao">XML <small>lotes que você anexou na aba XML</small></h2>${kpis(p.xmls, 'Lotes anexados')}` : ''}
+    <div class="cartao"><h2>${p.porMes ? 'Mês a mês' : 'Dia a dia'} <small class="apagado">${p.fatura ? 'valor lançado' : 'lotes anexados'}</small></h2>${grafico}</div>
     <div class="duas">
-      ${p.fatura ? `<div class="cartao"><h2>Convênios do mês · faturamento</h2>${barras(p.convenios.map((c) => ({ grupo: c.grupo, valor: c.valor, guias: c.qtd })))}</div>` : ''}
-      ${p.xml ? `<div class="cartao"><h2>Convênios do mês · XML</h2>${barras(p.conveniosXml.map((c) => ({ grupo: c.grupo, valor: c.valor, guias: c.qtd })))}</div>` : ''}
+      ${p.fatura ? `<div class="cartao"><h2>Convênios · Fatura</h2>${barras(p.convenios.map((c) => ({ grupo: c.grupo, valor: c.valor, guias: c.qtd })))}</div>` : ''}
+      ${p.xml ? `<div class="cartao"><h2>Convênios · XML</h2>${barras(p.conveniosXml.map((c) => ({ grupo: c.grupo, valor: c.valor, guias: c.qtd })))}</div>` : ''}
     </div>
-    ${p.fatura ? `<div class="cartao"><h2>Últimos lotes lançados</h2>${tabela(p.ultimosLotes, false)}</div>` : ''}
-    ${p.xml ? `<div class="cartao"><h2>Últimos lotes anexados (XML)</h2>${tabela(p.ultimosXmls, true)}</div>` : ''}`;
+    ${p.fatura ? `<div class="cartao"><h2>Lotes lançados no período</h2>${tabela(p.listaLotes, false)}</div>` : ''}
+    ${p.xml ? `<div class="cartao"><h2>Lotes anexados no período (XML)</h2>${tabela(p.listaXmls, true)}</div>` : ''}`;
+  ligarPeriodo(telaMinha);
+}
+
+// ---------- Filtro de período (Fatura e Minha produção usam o mesmo) ----------
+const estadoPeriodo = { rapido: 'mes', inicio: inicioMes(), fim: hoje() };
+const PERIODOS_RAPIDOS = [['hoje', 'Hoje'], ['semana', 'Semana'], ['mes', 'Mês'], ['ano', 'Ano'], ['tudo', 'Tudo']];
+function aplicarRapido(k) {
+  const d = new Date();
+  const seg = new Date(d); seg.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  Object.assign(estadoPeriodo, { rapido: k, fim: hoje(),
+    inicio: { hoje: hoje(), semana: isoLocal(seg), mes: inicioMes(), ano: inicioAno(), tudo: '' }[k] });
+}
+function rotuloPeriodo() {
+  const p = estadoPeriodo;
+  const nomes = { hoje: 'hoje', semana: 'nesta semana', mes: 'neste mês', ano: 'neste ano', tudo: 'todo o período' };
+  if (p.rapido && nomes[p.rapido]) return nomes[p.rapido];
+  return `${p.inicio ? dataBR(p.inicio) : 'início'} a ${dataBR(p.fim)}`;
+}
+function barraPeriodo(titulo = '') {
+  const p = estadoPeriodo;
+  return `<div class="periodo">${titulo ? `<b>${titulo}</b>` : ''}
+    <div class="alternar">${PERIODOS_RAPIDOS.map(([k, v]) => `<button type="button" data-periodo="${k}" class="${p.rapido === k ? 'ativo' : ''}">${v}</button>`).join('')}</div>
+    <label>De <input type="date" data-per="inicio" value="${p.inicio || ''}"></label>
+    <label>Até <input type="date" data-per="fim" value="${p.fim || ''}"></label></div>`;
+}
+function ligarPeriodo(redesenhar) {
+  $$('[data-periodo]').forEach((b) => b.addEventListener('click', () => { aplicarRapido(b.dataset.periodo); redesenhar(); }));
+  $$('[data-per]').forEach((i) => i.addEventListener('change', () => {
+    estadoPeriodo[i.dataset.per] = i.value || (i.dataset.per === 'fim' ? hoje() : '');
+    estadoPeriodo.rapido = '';
+    redesenhar();
+  }));
 }
 
 // ---------- Aba: Calendário de entregas ----------

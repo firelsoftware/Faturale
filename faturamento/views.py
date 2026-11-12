@@ -106,7 +106,10 @@ def anexar(campo, nome, caminho):
 # ---------- Páginas ----------
 @ensure_csrf_cookie
 def inicio(request):
-    return render(request, 'faturamento/index.html')
+    # "versao" muda quando app.js/styles.css mudam: o navegador baixa a versão nova em vez de usar a antiga guardada
+    pasta = Path(__file__).resolve().parent / 'static' / 'faturamento'
+    versao = int(max((pasta / f).stat().st_mtime for f in ('app.js', 'styles.css')))
+    return render(request, 'faturamento/index.html', {'versao': versao})
 
 
 def perfil_json(u):
@@ -1195,26 +1198,37 @@ def mensagens(request):
 # ---------- Minha produção (faturista vê rapidamente o que produziu) ----------
 @api()
 def minha_producao(request):
-    """Faturamento: lotes da produção da pessoa. XML: lotes que ela anexou no Envio de XML."""
+    """Produção da pessoa no período que ela escolher (padrão: mês atual).
+    Fatura: lotes lançados na produção dela. XML: lotes que ela anexou na aba XML."""
     u, agora = request.user, hoje()
-    inicio_semana = agora - timedelta(days=agora.weekday())
-    periodos = {'hoje': agora, 'semana': inicio_semana, 'mes': agora.replace(day=1), 'ano': agora.replace(month=1, day=1)}
-
-    lotes = list(Lote.objects.filter(faturista=u, data_lancamento__gte=periodos['ano']).select_related('convenio').order_by('-data_lancamento', '-id'))
-    envios = list(EnvioXml.objects.filter(responsavel=u, data_envio__gte=periodos['ano']).select_related('convenio', 'lote').order_by('-data_envio', '-id'))
+    inicio = para_data(request.GET.get('inicio'))
+    fim = para_data(request.GET.get('fim')) or agora
+    lotes_qs = Lote.objects.filter(faturista=u, data_lancamento__lte=fim).select_related('convenio')
+    envios_qs = EnvioXml.objects.filter(responsavel=u, data_envio__lte=fim).select_related('convenio', 'lote')
+    if inicio:
+        lotes_qs = lotes_qs.filter(data_lancamento__gte=inicio)
+        envios_qs = envios_qs.filter(data_envio__gte=inicio)
+    lotes = list(lotes_qs.order_by('-data_lancamento', '-id'))
+    envios = list(envios_qs.order_by('-data_envio', '-id'))
     valor_envio = lambda e: float(e.lote.valor_total) if e.lote else float(e.valor_protocolo or 0)
     guias_envio = lambda e: e.lote.qtd_guias if e.lote else 0
 
-    def soma_lotes(lista):
-        return {'qtd': len(lista), 'guias': sum(l.qtd_guias for l in lista), 'valor': round(sum(float(l.valor_total) for l in lista), 2)}
-
-    def soma_envios(lista):
-        return {'qtd': len(lista), 'guias': sum(guias_envio(e) for e in lista), 'valor': round(sum(valor_envio(e) for e in lista), 2)}
-
-    mes = periodos['mes']
-    dias = [mes + timedelta(days=i) for i in range((agora - mes).days + 1)]
-    lotes_mes = [l for l in lotes if l.data_lancamento >= mes]
-    envios_mes = [e for e in envios if e.data_envio >= mes]
+    # Gráfico: por dia até ~2 meses; acima disso, por mês
+    primeiro = inicio or min([l.data_lancamento for l in lotes] + [e.data_envio for e in envios] + [fim])
+    por_mes = (fim - primeiro).days > 62
+    chave = (lambda d: d.isoformat()[:7]) if por_mes else (lambda d: d.isoformat())
+    serie = {}
+    d = primeiro.replace(day=1) if por_mes else primeiro
+    while d <= fim:
+        serie[chave(d)] = {'periodo': chave(d), 'lotes': 0.0, 'lotesQtd': 0, 'xmls': 0}
+        d = (d.replace(day=28) + timedelta(days=4)).replace(day=1) if por_mes else d + timedelta(days=1)
+    for l in lotes:
+        g = serie.setdefault(chave(l.data_lancamento), {'periodo': chave(l.data_lancamento), 'lotes': 0.0, 'lotesQtd': 0, 'xmls': 0})
+        g['lotes'] = round(g['lotes'] + float(l.valor_total), 2)
+        g['lotesQtd'] += 1
+    for e in envios:
+        g = serie.setdefault(chave(e.data_envio), {'periodo': chave(e.data_envio), 'lotes': 0.0, 'lotesQtd': 0, 'xmls': 0})
+        g['xmls'] += 1
 
     def por_convenio(itens, nome, valor):
         grupos = {}
@@ -1225,17 +1239,15 @@ def minha_producao(request):
         return sorted(grupos.values(), key=lambda g: -g['valor'])
 
     return JsonResponse({
-        'fatura': u.faz_faturamento, 'xml': u.faz_xml, 'hoje': iso(agora),
-        'lotes': {k: soma_lotes([l for l in lotes if l.data_lancamento >= d]) for k, d in periodos.items()},
-        'xmls': {k: soma_envios([e for e in envios if e.data_envio >= d]) for k, d in periodos.items()},
-        'dias': [{'dia': iso(d),
-                  'lotes': round(sum(float(l.valor_total) for l in lotes_mes if l.data_lancamento == d), 2),
-                  'lotesQtd': sum(1 for l in lotes_mes if l.data_lancamento == d),
-                  'xmls': sum(1 for e in envios_mes if e.data_envio == d)} for d in dias],
-        'convenios': por_convenio(lotes_mes, lambda l: l.convenio.nome, lambda l: float(l.valor_total)),
-        'conveniosXml': por_convenio(envios_mes, lambda e: e.convenio.nome, valor_envio),
-        'ultimosLotes': [{'numero_lote': l.numero_lote, 'convenio': l.convenio.nome, 'data': iso(l.data_lancamento),
-                          'guias': l.qtd_guias, 'valor': float(l.valor_total), 'status': l.status} for l in lotes[:8]],
-        'ultimosXmls': [{'numero_lote': e.numero_lote, 'convenio': e.convenio.nome, 'data': iso(e.data_envio),
-                         'guias': guias_envio(e), 'valor': valor_envio(e), 'amarrado': bool(e.lote)} for e in envios[:8]],
+        'fatura': u.faz_faturamento, 'xml': u.faz_xml, 'hoje': iso(agora), 'inicio': iso(inicio), 'fim': iso(fim),
+        'porMes': por_mes,
+        'lotes': {'qtd': len(lotes), 'guias': sum(l.qtd_guias for l in lotes), 'valor': round(sum(float(l.valor_total) for l in lotes), 2)},
+        'xmls': {'qtd': len(envios), 'guias': sum(guias_envio(e) for e in envios), 'valor': round(sum(valor_envio(e) for e in envios), 2)},
+        'serie': [serie[k] for k in sorted(serie)],
+        'convenios': por_convenio(lotes, lambda l: l.convenio.nome, lambda l: float(l.valor_total)),
+        'conveniosXml': por_convenio(envios, lambda e: e.convenio.nome, valor_envio),
+        'listaLotes': [{'numero_lote': l.numero_lote, 'convenio': l.convenio.nome, 'data': iso(l.data_lancamento),
+                        'guias': l.qtd_guias, 'valor': float(l.valor_total), 'status': l.status} for l in lotes[:100]],
+        'listaXmls': [{'numero_lote': e.numero_lote, 'convenio': e.convenio.nome, 'data': iso(e.data_envio),
+                       'guias': guias_envio(e), 'valor': valor_envio(e), 'amarrado': bool(e.lote)} for e in envios[:100]],
     })

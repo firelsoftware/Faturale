@@ -436,3 +436,9 @@ h2.secao small { font-weight: 500; color: var(--texto-2); font-size: 12px; margi
 .dia-col small { font-size: 10.5px; color: var(--texto-2); }
 .dia-col.hoje small { color: var(--azul); font-weight: 700; }
 .dia-col em { font-style: normal; font-size: 9.5px; font-weight: 600; white-space: nowrap; color: var(--texto); }
+
+/* Filtro de período (Fatura e Minha produção) */
+.periodo { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.periodo > b { font-size: 14px; color: var(--navy-700); }
+.periodo label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; }
+.periodo input { width: auto; padding: 7px 9px; }

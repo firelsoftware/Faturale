@@ -7,7 +7,7 @@
   <link rel="icon" href="{% static 'faturamento/logo-f.png' %}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'faturamento/styles.css' %}">
+  <link rel="stylesheet" href="{% static 'faturamento/styles.css' %}?v={{ versao }}">
 </head>
 <body>
   <section id="tela-login" class="login oculto">
@@ -44,6 +44,6 @@
     <main><div id="alertas"></div><div id="conteudo"></div></main>
   </section>
 
-  <script type="module" src="{% static 'faturamento/app.js' %}"></script>
+  <script type="module" src="{% static 'faturamento/app.js' %}?v={{ versao }}"></script>
 </body>
 </html>
