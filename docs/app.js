@@ -99,59 +99,50 @@ const opcoesFaturista = (sel, todos = true) => (todos ? '<option value="">Todos<
   estado.faturistas.map((f) => `<option value="${f.id}" ${String(sel) === String(f.id) ? 'selected' : ''}>${esc(f.nome)}</option>`).join('');
 
 // ---------- Login ----------
-// Modo demonstração: a tela de entrada é só escolher a pessoa (sem senha).
-// Com o modo desligado no servidor, aparece o formulário de usuário e senha.
+// Entrada: usuário e senha, ou cadastro (que a coordenação/supervisão libera).
 async function mostrarLogin() {
   $('#tela-app').classList.add('oculto');
   $('#tela-login').classList.remove('oculto');
-  const lista = await api('/api/entrar/pessoas').catch(() => []);
-  $('#escolher').classList.toggle('oculto', !lista.length);
-  $('#form-login').classList.toggle('oculto', !!lista.length);
-  const ordem = ['diretor', 'coordenadora', 'supervisora', 'faturista'];
-  $('#escolher .pessoas').innerHTML = lista.sort((a, b) => ordem.indexOf(a.perfil) - ordem.indexOf(b.perfil)).map((u) =>
-    `<button data-login="${esc(u.login)}" data-nome="${esc(u.nome)}" data-sem-senha="${u.semSenha !== false}"><span class="avatar">${esc(u.nome[0])}</span><b>${esc(u.nome)}</b><small>${PERFIS[u.perfil]}</small></button>`).join('')
-    + '<button data-publico class="publico"><span class="avatar">👁</span><b>Todos</b><small>Consultar convênios e calendário · sem login</small></button>';
-  if (!lista.length) $('#login').focus();
-  $('#escolher > small').textContent = lista[0]?.semSenha === false ? 'Clique no seu nome e digite a senha · ou em "Todos" para só consultar' : '';
+  trocarEntrada('entrar');
 }
+// Abas da entrada: Entrar / Cadastrar-se
+function trocarEntrada(qual) {
+  $$('[data-entrada]').forEach((b) => b.classList.toggle('ativa', b.dataset.entrada === qual));
+  $('#form-login').classList.toggle('oculto', qual !== 'entrar');
+  $('#form-cadastro').classList.toggle('oculto', qual !== 'cadastro');
+  $('#erro-login').textContent = '';
+  if (qual === 'entrar') setTimeout(() => $('#login').focus(), 0);
+}
+$$('[data-entrada]').forEach((b) => b.addEventListener('click', () => { $('#ok-cadastro').classList.add('oculto'); trocarEntrada(b.dataset.entrada); }));
+$('#form-cadastro').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('#erro-login').textContent = '';
+  try {
+    await api('/api/cadastro', { method: 'POST', corpo: Object.fromEntries(new FormData(e.target)) });
+    const usuario = e.target.login.value;
+    e.target.reset();
+    trocarEntrada('entrar');
+    $('#login').value = usuario;
+    const ok = $('#ok-cadastro');
+    ok.textContent = 'Cadastro enviado! Assim que a coordenação ou a supervisão liberar, entre com o seu usuário e senha.';
+    ok.classList.remove('oculto');
+  } catch (err) { $('#erro-login').textContent = err.message; }
+});
 $('#form-login').addEventListener('submit', async (e) => {
   e.preventDefault();
   $('#erro-login').textContent = '';
   try {
-    estado.usuario = await api('/api/entrar', { method: 'POST', corpo: { login: $('#login').value, senha: $('#senha').value } });
+    estado.usuario = await api('/api/entrar', { method: 'POST', corpo: { login: $('#login').value.trim().toLowerCase(), senha: $('#senha').value } });
     $('#senha').value = '';
+    $('#ok-cadastro').classList.add('oculto');
     entrar();
   } catch (err) { $('#erro-login').textContent = err.message; }
 });
-// Clicar na pessoa: na demonstração entra direto; no sistema de verdade pede a senha.
-$('#escolher').addEventListener('click', async (e) => {
-  if (e.target.closest('[data-publico]')) {
-    // Consulta sem login: só Convênios e Calendário, só leitura
-    estado.usuario = { id: 0, nome: 'Consulta', perfil: 'publico', abas: ['convenios', 'calendario'], publico: true, modoDemo: true };
-    return entrar();
-  }
-  const b = e.target.closest('[data-login]');
-  if (!b) return;
-  $('#erro-login').textContent = '';
-  if (b.dataset.semSenha !== 'false') {
-    try { estado.usuario = await api('/api/entrar', { method: 'POST', corpo: { login: b.dataset.login } }); entrar(); }
-    catch (err) { $('#erro-login').textContent = err.message; }
-    return;
-  }
-  modal(`<h2>Olá, ${esc(b.dataset.nome)}</h2><form>
-    <div class="campo"><label>Senha</label><input name="senha" type="password" autocomplete="current-password" required autofocus></div>
-    <p class="erro-modal"></p>
-    <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Voltar</button><button class="btn btn-primario">Entrar</button></div></form>`,
-  (el, fechar) => {
-    $('input', el).focus();
-    $('form', el).addEventListener('submit', async (ev) => {
-      ev.preventDefault();
-      try {
-        estado.usuario = await api('/api/entrar', { method: 'POST', corpo: { login: b.dataset.login, senha: ev.target.senha.value } });
-        fechar(); entrar();
-      } catch (err) { $('.erro-modal', el).textContent = err.message; ev.target.senha.select(); }
-    });
-  });
+// Consulta sem login: só Convênios e Calendário, só leitura
+$('#tela-login').addEventListener('click', (e) => {
+  if (!e.target.closest('[data-publico]')) return;
+  estado.usuario = { id: 0, nome: 'Consulta', perfil: 'publico', abas: ['convenios', 'calendario'], publico: true, modoDemo: true };
+  entrar();
 });
 $('#sair').addEventListener('click', async () => {
   if (!estado.usuario?.publico) await api('/api/sair', { method: 'POST' }).catch(() => {});
@@ -452,14 +443,14 @@ async function carregarAlertas() {
   $('#alertas').innerHTML = visiveis.map((a) => `<div class="alerta ${a.nivel}" data-chave="${esc(chaveAlerta(a, r.hoje))}">
       <span class="alerta-icone">${a.nivel === 'urgente' ? '!' : a.nivel === 'atencao' ? '⏰' : 'ℹ'}</span>
       <div><b>${esc(a.titulo)}</b><span>${a.itens.slice(0, 10).map(esc).join(', ')}${a.itens.length > 10 ? ` e mais ${a.itens.length - 10}` : ''}</span></div>
-      ${a.aba ? `<button class="btn btn-claro btn-mini" data-ir="${a.aba}">${a.aba === 'calendario' ? 'Ver calendário' : 'Ver lotes'}</button>` : ''}
+      ${a.aba ? `<button class="btn btn-claro btn-mini" data-ir="${a.aba}">${{ calendario: 'Ver calendário', convenios: 'Ver convênios' }[a.aba] || (/cadastro/.test(a.titulo) ? 'Liberar' : 'Ver lotes')}</button>` : ''}
       <button class="fechar-alerta" title="Esconder até amanhã" data-fechar-alerta>×</button></div>`).join('');
   // Bolinha vermelha na aba Calendário quando há algo para hoje
   $('[data-aba=calendario]')?.classList.toggle('com-alerta', r.alertas.some((a) => a.nivel === 'urgente'));
 }
 $('#alertas').addEventListener('click', (e) => {
   const ir = e.target.closest('[data-ir]');
-  if (ir) return abrirAba(ir.dataset.ir);
+  if (ir) { if (ir.dataset.ir === 'gestao' && /cadastro/.test(ir.closest('.alerta')?.textContent || '')) subGestao = 'usuarios'; return abrirAba(ir.dataset.ir); }
   const fechar = e.target.closest('[data-fechar-alerta]');
   if (fechar) {
     const caixa = fechar.closest('.alerta');
@@ -1463,14 +1454,40 @@ async function gestaoLotes() {
 }
 
 async function gestaoUsuarios() {
-  const usuarios = await api('/api/usuarios');
-  const perfis = estado.usuario.perfil === 'diretor' ? Object.keys(PERFIS) : ['faturista'];
-  $('#sub').innerHTML = `<div class="cartao">
+  const todos = await api('/api/usuarios');
+  const pendentes = todos.filter((u) => u.aguardando);
+  const usuarios = todos.filter((u) => !u.aguardando);
+  // Quem pode dar qual perfil: diretoria todos; coordenação faturista e supervisora; supervisão faturista
+  const perfis = { diretor: ['faturista', 'supervisora', 'coordenadora', 'diretor'], coordenadora: ['faturista', 'supervisora'] }[estado.usuario.perfil] || ['faturista'];
+  $('#sub').innerHTML = `${pendentes.length ? `<div class="cartao cadastros-pendentes">
+    <h2>Cadastros aguardando liberação <span class="chat-conta">${pendentes.length}</span></h2>
+    ${pendentes.map((u) => `<div class="pendente" data-id="${u.id}">
+      <div><b>${esc(u.nome)}</b><small>usuário <b>${esc(u.login)}</b>${u.email ? ` · ${esc(u.email)}` : ''} · pediu: ${FUNCOES[u.funcao]} · ${dataBR(u.criado_em.slice(0, 10))}</small></div>
+      <label>Perfil <select data-perfil>${perfis.map((pf) => `<option value="${pf}">${PERFIS[pf]}</option>`).join('')}</select></label>
+      <label>Função <select data-funcao>${Object.entries(FUNCOES).map(([k, v]) => `<option value="${k}" ${u.funcao === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <div class="acoes"><button class="btn btn-perigo btn-mini" data-recusar>Recusar</button><button class="btn btn-primario btn-mini" data-liberar>Liberar acesso</button></div>
+    </div>`).join('')}</div>` : ''}
+    <div class="cartao">
     <h2>Usuários <button class="btn btn-primario btn-mini" id="novo-usuario">Novo usuário</button></h2>
     <div class="tabela-caixa"><table><thead><tr><th>Nome</th><th>Login</th><th>Perfil</th><th>Função</th><th>Situação</th><th>Criado em</th><th></th></tr></thead>
     <tbody>${usuarios.map((u) => `<tr data-id="${u.id}"><td><b>${esc(u.nome)}</b></td><td>${esc(u.login)}</td><td>${PERFIS[u.perfil]}</td><td>${u.perfil === 'faturista' ? FUNCOES[u.funcao] : '—'}</td>
       <td><span class="selo ${u.ativo ? 'conferido' : 'devolvido'}">${u.ativo ? 'Ativo' : 'Inativo'}</span>${u.trocar_senha ? ' <span class="selo lancado" title="Ainda não criou a própria senha">senha inicial</span>' : ''}</td><td>${dataBR(u.criado_em.slice(0, 10))}</td>
       <td><div class="acoes">${perfis.includes(u.perfil) ? '<button class="btn btn-claro btn-mini" data-editar>Editar</button>' : ''}</div></td></tr>`).join('')}</tbody></table></div></div>`;
+
+  $('.cadastros-pendentes')?.addEventListener('click', tentar(async (e) => {
+    const linha = e.target.closest('.pendente');
+    if (!linha) return;
+    const u = pendentes.find((x) => x.id === Number(linha.dataset.id));
+    if (e.target.closest('[data-liberar]')) {
+      await api(`/api/usuarios/${u.id}/liberar`, { method: 'POST', corpo: { perfil: $('[data-perfil]', linha).value, funcao: $('[data-funcao]', linha).value } });
+      avisar(`${u.nome} liberado(a). Já pode entrar com o usuário ${u.login}.`);
+    } else if (e.target.closest('[data-recusar]')) {
+      if (!confirm(`Recusar o cadastro de ${u.nome}? O cadastro será apagado.`)) return;
+      await api(`/api/usuarios/${u.id}/liberar`, { method: 'DELETE' });
+      avisar('Cadastro recusado.');
+    } else return;
+    await carregarListas(); carregarAlertas(); gestaoUsuarios();
+  }));
 
   const form = (u = {}) => `<form>
     <div class="grade">

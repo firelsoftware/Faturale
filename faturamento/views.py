@@ -130,14 +130,45 @@ def entrar(request):
     if request.method != 'POST':
         return erro('Método não permitido.', 405)
     dados = json.loads(request.body or '{}')
+    nome_login = str(dados.get('login', '')).strip().lower()
+    pendente = Usuario.objects.filter(username=nome_login, aguardando_liberacao=True).first()
+    if pendente and pendente.check_password(str(dados.get('senha', ''))):
+        return erro('Seu cadastro está aguardando liberação da coordenação ou da supervisão.', 403)
     if settings.FATURALE_MODO_DEMO:
-        u = Usuario.objects.filter(username=dados.get('login', ''), is_active=True).first()
+        u = Usuario.objects.filter(username=nome_login, is_active=True).first()
     else:
-        u = authenticate(request, username=str(dados.get('login', '')).strip().lower(), password=dados.get('senha', ''))
+        u = authenticate(request, username=nome_login, password=dados.get('senha', ''))
     if not u:
         return erro('Usuário ou senha inválidos.', 401)
     login(request, u, backend='django.contrib.auth.backends.ModelBackend')
     return JsonResponse(perfil_json(u))
+
+
+def cadastrar(request):
+    """Cadastro feito pela própria pessoa. Fica inativo até a coordenação/supervisão liberar."""
+    if request.method != 'POST':
+        return erro('Método não permitido.', 405)
+    d = json.loads(request.body or '{}')
+    nome = str(d.get('nome') or '').strip()[:80]
+    login_ = str(d.get('login') or '').strip().lower()
+    email = str(d.get('email') or '').strip()[:120]
+    senha = str(d.get('senha') or '')
+    if not nome or not re.fullmatch(r'[a-z0-9._-]{3,30}', login_):
+        return erro('Preencha o nome e um usuário de 3 a 30 letras minúsculas, números ou ponto (ex.: maria.silva).')
+    if email and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email):
+        return erro('E-mail inválido.')
+    if len(senha) < 6 or senha == settings.FATURALE_SENHA_INICIAL:
+        return erro('A senha precisa de pelo menos 6 caracteres (e não pode ser 123456).')
+    if senha != str(d.get('confirmacao') or ''):
+        return erro('A confirmação não é igual à senha.')
+    if Usuario.objects.filter(username=login_).exists():
+        return erro('Esse usuário já existe. Escolha outro.', 409)
+    funcao = d.get('funcao') if d.get('funcao') in ('faturamento', 'xml', 'ambos') else 'ambos'
+    u = Usuario(username=login_, first_name=nome, email=email, perfil='faturista', funcao=funcao,
+                is_active=False, aguardando_liberacao=True, trocar_senha=False)
+    u.set_password(senha)
+    u.save()
+    return JsonResponse({'ok': True})
 
 
 def sair(request):
@@ -180,11 +211,14 @@ def pessoas(request):
 
 def usuario_json(u):
     return {'id': u.id, 'nome': u.nome, 'login': u.username, 'perfil': u.perfil, 'ativo': u.is_active,
-            'criado_em': u.date_joined.date().isoformat(), 'trocar_senha': u.trocar_senha, 'funcao': u.funcao}
+            'criado_em': u.date_joined.date().isoformat(), 'trocar_senha': u.trocar_senha, 'funcao': u.funcao,
+            'email': u.email, 'aguardando': u.aguardando_liberacao}
 
 
 def perfis_que_pode_criar(u):
-    return [p.value for p in Usuario.Perfil] if u.perfil == 'diretor' else ['faturista']
+    if u.perfil == 'diretor':
+        return [p.value for p in Usuario.Perfil]
+    return ['faturista', 'supervisora'] if u.perfil == 'coordenadora' else ['faturista']
 
 
 @api('gestao', ('GET', 'POST'))
@@ -204,6 +238,26 @@ def usuarios(request):
     u.set_password(settings.FATURALE_SENHA_INICIAL)  # a pessoa troca no primeiro acesso
     u.save()
     return JsonResponse({'id': u.id})
+
+
+@api('gestao', ('POST', 'DELETE'))
+def liberar_cadastro(request, pk):
+    """POST: libera o cadastro com o perfil e a função escolhidos. DELETE: recusa (apaga o cadastro)."""
+    alvo = Usuario.objects.filter(pk=pk, aguardando_liberacao=True).first()
+    if not alvo:
+        return erro('Cadastro não encontrado.', 404)
+    if request.method == 'DELETE':
+        alvo.delete()
+        return JsonResponse({'ok': True})
+    d = request.dados
+    perfil = d.get('perfil') or 'faturista'
+    if perfil not in perfis_que_pode_criar(request.user):
+        return erro('Você não pode liberar esse perfil.', 403)
+    alvo.perfil = perfil
+    alvo.funcao = d.get('funcao') if d.get('funcao') in ('faturamento', 'xml', 'ambos') else alvo.funcao
+    alvo.is_active, alvo.aguardando_liberacao = True, False
+    alvo.save()
+    return JsonResponse(usuario_json(alvo))
 
 
 @api('gestao', ('PUT',))
@@ -1129,6 +1183,9 @@ def alertas(request):
                          'titulo': 'Valor diferente do protocolo do convênio — corrija o lote' if not u.ve_todos
                          else 'Lotes com valor diferente do protocolo do convênio', 'itens': itens})
     if u.pode('gestao'):
+        novos = list(Usuario.objects.filter(aguardando_liberacao=True).order_by('date_joined').values_list('first_name', flat=True))
+        if novos:
+            lista.insert(0, {'nivel': 'urgente', 'aba': 'gestao', 'titulo': f'{len(novos)} cadastro(s) aguardando liberação', 'itens': novos})
         abertas = list(DuvidaConvenio.objects.filter(resposta='').select_related('convenio').order_by('id')[:30])
         if abertas:
             lista.insert(0, {'nivel': 'atencao', 'aba': 'convenios', 'titulo': f'{len(abertas)} dúvida(s) sobre convênios para responder',
@@ -1151,7 +1208,8 @@ def versao(request):
     c = EntregaCalendario.objects.aggregate(n=Count('id'), m=Max('concluido_em'))
     marca = lambda d: f"{d['n']}-{d['m'].timestamp() if d['m'] else 0}"
     dv = DuvidaConvenio.objects.aggregate(n=Count('id'), r=Count('id', filter=~Q(resposta='')))
-    return JsonResponse({'versao': f"{marca(l)}|{marca(e)}|{marca(c)}|{dv['n']}-{dv['r']}"})
+    pend = Usuario.objects.filter(aguardando_liberacao=True).count()
+    return JsonResponse({'versao': f"{marca(l)}|{marca(e)}|{marca(c)}|{dv['n']}-{dv['r']}|{pend}"})
 
 
 # ---------- Mensagens entre a equipe ----------

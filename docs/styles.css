@@ -520,3 +520,26 @@ main { max-width: 1440px; margin: 0 auto; }
 .duvida-resposta { border-left-color: #8a94a6 !important; background: #f3f4f6 !important; }
 .duvida-resposta small { color: var(--texto-2) !important; }
 .duvida-resposta p { color: #2b2f36; }
+
+/* Entrada: Entrar / Cadastrar-se */
+.entrada { margin-top: 28px; background: rgba(255, 255, 255, .04); border: 1px solid rgba(255, 255, 255, .1); border-radius: 16px; padding: 20px 22px 22px;
+  text-align: left; backdrop-filter: blur(6px); }
+.entrada form { margin: 0; background: none; border: 0; padding: 0; }
+.entrada-abas { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid rgba(255, 255, 255, .12); }
+.entrada-abas button { flex: 1; background: none; border: 0; color: var(--prata); padding: 10px; cursor: pointer; font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.entrada-abas button.ativa { color: #fff; border-color: var(--azul-claro); }
+.entrada select { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .15); color: #fff; }
+.entrada select option { color: var(--texto); }
+.entrada-nota { color: var(--prata); font-size: 12px; margin: 10px 0 0; text-align: center; }
+.ok-login { color: #7ee2b8; font-size: 13px; margin: 12px 0 0; text-align: center; }
+.link-publico { background: none; border: 0; color: var(--azul-claro); cursor: pointer; font-size: 13px; text-decoration: underline; margin-top: 4px; }
+
+/* Gestão → Usuários: cadastros aguardando liberação */
+.cadastros-pendentes { border-color: #f2c4c9; background: #fffafa; }
+.pendente { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid #f3e3e5; }
+.pendente:last-child { border-bottom: 0; }
+.pendente > div:first-child { flex: 1 1 260px; display: flex; flex-direction: column; }
+.pendente small { color: var(--texto-2); }
+.pendente label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; }
+.pendente select { width: auto; padding: 6px 8px; }
+.login .entrada form { margin: 0; background: none; border: 0; padding: 0; backdrop-filter: none; border-radius: 0; }

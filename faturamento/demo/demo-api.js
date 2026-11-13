@@ -2,7 +2,7 @@
 // Simula a API do Django dentro do navegador: as telas são as mesmas do sistema.
 // Os dados ficam só neste navegador (localStorage). Nada é enviado a lugar nenhum.
 (() => {
-  const CHAVE = 'faturale-demo-v7';
+  const CHAVE = 'faturale-demo-v8';
   const fetchOriginal = window.fetch.bind(window);
   let db = null;
   const arquivos = {}; // 'lote:ID' / 'xml:ID' -> object URL (só nesta sessão)
@@ -285,7 +285,21 @@
     const p = caminho.split('/').filter(Boolean).slice(1); // sem "api"
     const [r0, r1, r2] = p;
     if (r0 === 'entrar' && r1 === 'pessoas') return json(db.usuarios.filter((u) => u.ativo).map((u) => ({ nome: u.nome, login: u.login, perfil: u.perfil, semSenha: false })));
+    if (r0 === 'cadastro') {
+      const nomeC = String(corpo.nome || '').trim().slice(0, 80); const loginC = String(corpo.login || '').trim().toLowerCase();
+      if (!nomeC || !/^[a-z0-9._-]{3,30}$/.test(loginC)) return erro('Preencha o nome e um usuário de 3 a 30 letras minúsculas, números ou ponto (ex.: maria.silva).');
+      const senhaC = String(corpo.senha || '');
+      if (senhaC.length < 6 || senhaC === SENHA_INICIAL) return erro('A senha precisa de pelo menos 6 caracteres (e não pode ser 123456).');
+      if (senhaC !== String(corpo.confirmacao || '')) return erro('A confirmação não é igual à senha.');
+      if (db.usuarios.some((x) => x.login === loginC)) return erro('Esse usuário já existe. Escolha outro.', 409);
+      const novo = { id: novoId(db.usuarios), nome: nomeC, login: loginC, email: String(corpo.email || ''), perfil: 'faturista',
+        funcao: ['faturamento', 'xml', 'ambos'].includes(corpo.funcao) ? corpo.funcao : 'ambos', ativo: false, aguardando: true, criado_em: hoje() };
+      db.usuarios.push(novo); (db.senhas ||= {})[novo.id] = senhaC; (db.trocar ||= {})[novo.id] = false; salvar();
+      return json({ ok: true });
+    }
     if (r0 === 'entrar') {
+      const pend = db.usuarios.find((x) => x.login === corpo.login && x.aguardando);
+      if (pend && String(corpo.senha || '') === senhaDe(pend)) return erro('Seu cadastro está aguardando liberação da coordenação ou da supervisão.', 403);
       const u = db.usuarios.find((x) => x.login === corpo.login && x.ativo);
       if (!u || String(corpo.senha || '') !== senhaDe(u)) return erro('Usuário ou senha inválidos.', 401);
       db.usuarioAtual = u.id; salvar(); return json(perfilJson(u));
@@ -327,9 +341,19 @@
     if (precisaTrocar(u)) return new Response(JSON.stringify({ erro: 'Troque sua senha para continuar.', trocarSenha: true }), { status: 428, headers: { 'content-type': 'application/json' } });
     if (r0 === 'pessoas') return json(db.usuarios.filter((x) => x.ativo).map((x) => ({ id: x.id, nome: x.nome, perfil: x.perfil, funcao: x.funcao || 'ambos', fatura: fazFat(x), xml: fazXml(x) })).sort((a, b) => a.nome.localeCompare(b.nome)));
 
+    if (r0 === 'usuarios' && r2 === 'liberar') {
+      if (!pode('gestao')) return erro('Sem acesso.', 403);
+      const alvo = db.usuarios.find((x) => x.id === Number(r1) && x.aguardando);
+      if (!alvo) return erro('Cadastro não encontrado.', 404);
+      if (metodo === 'DELETE') { db.usuarios = db.usuarios.filter((x) => x !== alvo); salvar(); return json({ ok: true }); }
+      const permit = { diretor: ['faturista', 'supervisora', 'coordenadora', 'diretor'], coordenadora: ['faturista', 'supervisora'] }[u.perfil] || ['faturista'];
+      if (!permit.includes(corpo.perfil || 'faturista')) return erro('Você não pode liberar esse perfil.', 403);
+      Object.assign(alvo, { perfil: corpo.perfil || 'faturista', funcao: corpo.funcao || alvo.funcao, ativo: true, aguardando: false }); salvar();
+      return json({ ...alvo, trocar_senha: false });
+    }
     if (r0 === 'usuarios') {
       if (!pode('gestao')) return erro('Sem acesso.', 403);
-      if (metodo === 'GET') return json([...db.usuarios].sort((a, b) => a.nome.localeCompare(b.nome)).map((x) => ({ ...x, trocar_senha: precisaTrocar(x) })));
+      if (metodo === 'GET') return json([...db.usuarios].sort((a, b) => a.nome.localeCompare(b.nome)).map((x) => ({ ...x, aguardando: !!x.aguardando, trocar_senha: precisaTrocar(x) })));
       if (metodo === 'POST') {
         if (db.usuarios.some((x) => x.login === corpo.login)) return erro('Login já existe.', 409);
         db.usuarios.push({ id: novoId(db.usuarios), nome: corpo.nome, login: String(corpo.login).toLowerCase(), perfil: corpo.perfil, funcao: corpo.funcao || 'ambos', ativo: true, criado_em: hoje() });
@@ -607,6 +631,8 @@
       if (div.length) lista.unshift({ nivel: 'urgente', aba: veTodos(u) ? 'gestao' : 'faturamento', itens: div,
         titulo: veTodos(u) ? 'Lotes com valor diferente do protocolo do convênio' : 'Valor diferente do protocolo do convênio — corrija o lote' });
       const abertasD = (db.duvidas || []).filter((d) => !d.resposta);
+      const pendC = db.usuarios.filter((x) => x.aguardando);
+      if (pode('gestao') && pendC.length) lista.unshift({ nivel: 'urgente', aba: 'gestao', titulo: `${pendC.length} cadastro(s) aguardando liberação`, itens: pendC.map((x) => x.nome) });
       if (pode('gestao') && abertasD.length) lista.unshift({ nivel: 'atencao', aba: 'convenios', titulo: `${abertasD.length} dúvida(s) sobre convênios para responder`, itens: [...new Set(abertasD.map((d) => conv(d.convenio_id).nome))].sort() });
       return json({ hoje: hoje(), alertas: lista });
     }
@@ -711,7 +737,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     const faixa = document.createElement('div');
     faixa.className = 'faixa-demo';
-    faixa.innerHTML = 'Demonstração · dados fictícios · senha do primeiro acesso: <b>123456</b> <button type="button">Recomeçar do zero</button>';
+    faixa.innerHTML = 'Demonstração · usuários: leandro, thalita, larissa, fabricio, mister… · senha do 1º acesso: <b>123456</b> <button type="button">Recomeçar do zero</button>';
     faixa.querySelector('button').onclick = () => { try { localStorage.removeItem(CHAVE); } catch {} location.href = location.pathname; };
     document.body.append(faixa);
   });

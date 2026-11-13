@@ -56,6 +56,14 @@ Na entrada do portal, o cartão **Todos** abre só para leitura as abas **Convê
 prazos, quem fatura e quem passa o XML) e **Calendário**. Não mostra produção, valores, lotes nem
 mensagens, e não deixa alterar nada.
 
+## Entrada e cadastro
+
+A entrada tem duas abas: **Entrar** (usuário e senha) e **Cadastrar-se** (nome, usuário, e-mail, senha e a
+função: Fatura, XML ou as duas). O cadastro fica **aguardando liberação**: a coordenação e a supervisão
+recebem um alerta e, em **Gestão → Usuários**, liberam (escolhendo perfil e função) ou recusam. A
+coordenação pode dar perfil de faturista ou supervisora; a supervisão, de faturista; a diretoria, qualquer um.
+Embaixo do formulário fica o link para a consulta sem login.
+
 ## Senhas
 
 Com `FATURALE_MODO_DEMO=0` no `.env`, clicar na pessoa pede a senha. Todo mundo começa com a

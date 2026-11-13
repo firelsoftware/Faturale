@@ -20,6 +20,8 @@ class Usuario(AbstractUser):
 
     # Senha inicial (ou redefinida pela gestão): obriga a trocar no próximo acesso
     trocar_senha = models.BooleanField('trocar a senha no próximo acesso', default=True)
+    # Cadastro feito pela própria pessoa: só entra depois que a coordenação/supervisão liberar
+    aguardando_liberacao = models.BooleanField('aguardando liberação', default=False)
     # Última mensagem da conversa "Equipe toda" que a pessoa já viu (para contar as não lidas)
     equipe_lida_ate = models.PositiveIntegerField(default=0)
 
