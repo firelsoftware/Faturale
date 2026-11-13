@@ -110,7 +110,8 @@
   const precisaTrocar = (u) => (db.trocar ||= {})[u.id] !== false;
   const perfilJson = (u) => ({ id: u.id, nome: u.nome, login: u.login, perfil: u.perfil, abas: abasDe(u), funcao: u.funcao || 'ambos', modoDemo: false, regraGuias: 'menor', trocarSenha: precisaTrocar(u) });
   const duvidasDe = (c) => (db.duvidas ||= []).filter((d) => d.convenio_id === c.id);
-  const convJson = (c) => ({ ...c, duvidas_abertas: duvidasDe(c).filter((d) => !d.resposta).length, duvidas_total: duvidasDe(c).length, faturista: nome(c.faturista_id), responsavel_xml: nome(c.xml_id), aberto_hoje: abertoHoje(c) });
+  const convJson = (c) => ({ ...c, duvidas_abertas: duvidasDe(c).filter((d) => !d.resposta).length, duvidas_total: duvidasDe(c).length,
+    faq: duvidasDe(c).filter((d) => d.resposta).sort((x, y) => x.id - y.id).map((d) => ({ pergunta: d.texto, resposta: d.resposta })), faturista: nome(c.faturista_id), responsavel_xml: nome(c.xml_id), aberto_hoje: abertoHoje(c) });
   const divergencia = (l) => {
     const es = db.envios.filter((e) => e.lote_id === l.id && e.valor_protocolo != null).sort((a, b) => a.data_envio.localeCompare(b.data_envio) || a.id - b.id);
     const e = es.at(-1);

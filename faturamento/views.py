@@ -255,6 +255,9 @@ def convenio_json(c, feriados=None):
         'pacote': c.pacote, 'precisa_autorizacao': c.precisa_autorizacao, 'precisa_guia': c.precisa_guia,
         'precisa_senha': c.precisa_senha, 'particularidades': c.particularidades,
         'prazo_operadora': c.prazo_operadora, 'sem_vencimento': c.sem_vencimento,
+        'faq': [{'pergunta': d.texto, 'resposta': d.resposta} for d in sorted(
+            (d for d in (c.duvidas.all() if hasattr(c, '_prefetched_objects_cache') and 'duvidas' in c._prefetched_objects_cache
+                         else c.duvidas.exclude(resposta='')) if d.resposta), key=lambda d: d.id)],
         'duvidas_abertas': getattr(c, 'n_duvidas_abertas', None) if hasattr(c, 'n_duvidas_abertas') else c.duvidas.filter(resposta='').count(),
         'duvidas_total': getattr(c, 'n_duvidas', 0),
     }
@@ -322,7 +325,8 @@ def aplicar_convenio(c, d):
 def convenios(request):
     if request.method == 'GET':
         qs = sorted(Convenio.objects.select_related('faturista', 'responsavel_xml')
-                    .annotate(n_duvidas_abertas=Count('duvidas', filter=Q(duvidas__resposta='')), n_duvidas=Count('duvidas')),
+                    .annotate(n_duvidas_abertas=Count('duvidas', filter=Q(duvidas__resposta='')), n_duvidas=Count('duvidas'))
+                    .prefetch_related('duvidas'),
                     key=lambda c: normalizar(c.nome))
         feriados = feriados_do_mes()
         return JsonResponse([convenio_json(c, feriados) for c in qs], safe=False)
@@ -1296,7 +1300,8 @@ def _so_get(fn):
 @_so_get
 def publico_convenios(request):
     qs = sorted(Convenio.objects.filter(ativo=True).select_related('faturista', 'responsavel_xml')
-                .annotate(n_duvidas_abertas=Count('duvidas', filter=Q(duvidas__resposta='')), n_duvidas=Count('duvidas')),
+                .annotate(n_duvidas_abertas=Count('duvidas', filter=Q(duvidas__resposta='')), n_duvidas=Count('duvidas'))
+                    .prefetch_related('duvidas'),
                 key=lambda c: normalizar(c.nome))
     feriados = feriados_do_mes()
     return JsonResponse([convenio_json(c, feriados) for c in qs], safe=False)

@@ -1286,6 +1286,8 @@ function telaConvenios() {
             ${podeEditar ? '<button class="btn btn-claro btn-mini" data-part>Editar</button>' : ''}</span></header>
           <div class="tags">${etiquetas(c)}</div>
           ${c.particularidades ? `<p class="conv-obs">${esc(c.particularidades).replace(/\n/g, '<br>')}</p>` : ''}
+          ${(c.faq || []).length ? `<div class="faq">${c.faq.slice(-3).map((f) => `<div class="faq-item"><p class="faq-p">${esc(f.pergunta)}</p><p class="faq-r">${esc(f.resposta).replace(/\n/g, '<br>')}</p></div>`).join('')}
+            ${c.faq.length > 3 ? `<button class="link-faq" data-duvida>Ver as ${c.faq.length} perguntas e respostas</button>` : ''}</div>` : ''}
           <footer><span>Fatura: ${c.faturista ? esc(c.faturista) : ninguem}</span><span>XML: ${c.tem_xml ? (c.responsavel_xml ? esc(c.responsavel_xml) : ninguem) : 'sem XML'}</span>
             <span>Portal: ${c.prazo_texto ? esc(c.prazo_texto) : ninguem}${c.aberto_hoje ? ' <span class="selo conferido">aberto hoje</span>' : ''}</span></footer>
         </article>`).join('') || '<div class="vazio">Nenhum convênio nesse filtro.</div>'}</div></div>`;
