@@ -252,6 +252,8 @@ def convenio_json(c, feriados=None):
         'prazo_texto': c.prazo_texto, 'prazo_tipo': c.prazo_tipo, 'prazo_inicio': c.prazo_inicio, 'prazo_fim': c.prazo_fim,
         'prazo_dias': c.dias_lista, 'prazo_dia_util': c.prazo_dia_util, 'prazo_hora': c.prazo_hora,
         'aberto_hoje': aberto_hoje(c, feriados),
+        'pacote': c.pacote, 'precisa_autorizacao': c.precisa_autorizacao, 'precisa_guia': c.precisa_guia,
+        'precisa_senha': c.precisa_senha, 'particularidades': c.particularidades,
     }
 
 
@@ -296,6 +298,14 @@ def aplicar_convenio(c, d):
         c.responsavel_xml_id = d['xml_id'] or None
     if isinstance(d.get('prazo'), dict):
         aplicar_prazo(c, d['prazo'])
+    if isinstance(d.get('particularidades'), dict):
+        p = d['particularidades']
+        sim_nao = lambda v: None if v in (None, '', 'nd') else (v is True or str(v).lower() in ('1', 'true', 'sim'))
+        for campo in ('pacote', 'precisa_autorizacao', 'precisa_guia', 'precisa_senha'):
+            if campo in p:
+                setattr(c, campo, sim_nao(p[campo]))
+        if 'texto' in p:
+            c.particularidades = str(p['texto'] or '').strip()[:4000]
 
 
 @api(None, ('GET', 'POST'))
@@ -323,9 +333,10 @@ def convenio(request, pk):
     if not c:
         return erro('Não encontrado.', 404)
     # Supervisão e coordenação mudam o prazo do portal; o resto do convênio é com a coordenação.
-    so_prazo = request.method == 'PUT' and set(request.dados) <= {'prazo'}
+    # Supervisão também pode mudar o prazo do portal e as particularidades
+    so_prazo = request.method == 'PUT' and set(request.dados) <= {'prazo', 'particularidades'}
     if not so_prazo and not request.user.pode('coordenacao'):
-        return erro('Só a coordenação muda isso. A supervisão pode mudar o prazo do portal.', 403)
+        return erro('Só a coordenação muda isso. A supervisão pode mudar o prazo e as particularidades.', 403)
     if request.method == 'DELETE':
         try:
             c.delete()

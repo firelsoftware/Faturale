@@ -468,3 +468,24 @@ main { max-width: 1440px; margin: 0 auto; }
   .aba svg { display: none; }
 }
 @media print { .lateral { position: static; box-shadow: none; } }
+
+/* Aba Convênios: particularidades */
+.conv-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.conv-card { border: 1px solid var(--borda); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; background: #fff; }
+.conv-card.meu { border-color: #b9cff7; box-shadow: inset 3px 0 0 var(--azul); }
+.conv-card header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.conv-card header b { font-size: 15px; }
+.conv-obs { margin: 0; font-size: 13px; color: var(--texto); background: #f7f9fc; border-radius: 8px; padding: 8px 10px; overflow-wrap: anywhere; }
+.conv-card footer { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--texto-2); border-top: 1px solid #eef1f6; padding-top: 8px; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+.tag.sim { background: var(--amarelo-suave); color: #8a5a00; }
+.tag.sim:first-child { }
+.tag.nao { background: #eef1f6; color: var(--texto-2); font-weight: 600; }
+.tag.vazio { background: none; border: 1px dashed var(--borda); color: var(--texto-2); font-weight: 500; }
+.form-part .linha-part { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid #eef1f6; font-size: 14px; }
+.segmentos { display: inline-flex; border: 1px solid var(--borda); border-radius: 8px; overflow: hidden; flex: none; }
+.seg { margin: 0; padding: 6px 12px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--texto-2); border-left: 1px solid var(--borda); }
+.seg:first-child { border-left: 0; }
+.seg input { display: none; }
+.seg.ativo { background: var(--azul); color: #fff; }

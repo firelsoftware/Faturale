@@ -122,6 +122,10 @@ demonstração** tira os lotes fictícios. Para começar do zero, apague a pasta
   guias e lotes), gráfico dia a dia do mês, convênios do mês e últimos lançamentos. Conta os lotes
   lançados (Faturamento) e os lotes de produção anexados no Envio de XML — lá, a produção vai para
   quem anexou.
+- **Convênios** — todos os convênios com as particularidades de cada um: **pacote**, **precisa de
+  autorização**, **precisa de nº da guia**, **precisa de senha** (sim / não / não informado) e
+  observações. Filtros por etiqueta e busca. Supervisão e coordenação editam; os demais consultam.
+  Em "Meus convênios", o que a pessoa fatura e passa de XML.
 - **Gestão** — lotes da equipe (conferir, devolver com motivo, editar, excluir, filtro por situação
   do XML) e usuários.
 - **Coordenação**

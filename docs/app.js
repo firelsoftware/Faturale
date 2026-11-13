@@ -1221,66 +1221,105 @@ function adicionarNoDia(dia, feriados) {
 }
 
 // ---------- Aba: Convênios ----------
-// "Meus convênios": o que a pessoa fatura e o que ela passa de XML, com prazo e parceiro.
-// "Todos os convênios": a lista completa, só para consulta (quem muda é a coordenação).
-const estadoConv = { sub: '', busca: '', pessoa: '', xml: '' };
+// "Todos os convênios": a lista completa com as particularidades de cada um (pacote, autorização,
+// nº da guia, senha e observações). Supervisão e coordenação editam; os demais consultam.
+// "Meus convênios": o que a pessoa fatura e o que passa de XML.
+const estadoConv = { sub: 'todos', busca: '', pessoa: '', tag: '' };
+const TAGS = [
+  ['pacote', 'Pacote', 'Sem pacote'],
+  ['precisa_autorizacao', 'Precisa de autorização', 'Sem autorização'],
+  ['precisa_guia', 'Precisa de nº da guia', 'Sem nº da guia'],
+  ['precisa_senha', 'Precisa de senha', 'Sem senha'],
+];
+function etiquetas(c) {
+  return TAGS.map(([k, sim, nao]) => (c[k] === true ? `<span class="tag sim">${sim}</span>`
+    : c[k] === false ? `<span class="tag nao">${nao}</span>` : '')).join('')
+    || '<span class="tag vazio">Particularidades não informadas</span>';
+}
 
 function telaConvenios() {
   const eu = estado.usuario;
   const s = estadoConv;
+  const podeEditar = eu.abas.includes('gestao');
   const fatura = estado.convenios.filter((c) => c.ativo && c.faturista_id === eu.id);
   const passaXml = estado.convenios.filter((c) => c.ativo && c.xml_id === eu.id);
-  if (!s.sub) s.sub = fatura.length || passaXml.length ? 'meus' : 'todos';
-  const ordenar = (l) => [...l].sort((a, b) => b.aberto_hoje - a.aberto_hoje || a.nome.localeCompare(b.nome));
   const ninguem = '<span class="apagado">—</span>';
-  const xmlSelo = (c) => (c.tem_xml ? '<span class="selo xml-enviado">Tem XML</span>' : '<span class="selo xml-na">Sem XML</span>');
-
-  const tabelaMeus = (lista, parceiro) => (!lista.length ? '<div class="vazio">Nenhum convênio.</div>' : `<div class="tabela-caixa"><table>
-    <thead><tr><th>Convênio</th><th>Prazo do portal</th><th>XML</th><th>${parceiro === 'xml' ? 'Quem passa o XML' : 'Quem fatura'}</th></tr></thead>
-    <tbody>${ordenar(lista).map((c) => `<tr><td><b>${esc(c.nome)}</b></td><td>${prazo(c)}</td><td>${xmlSelo(c)}</td>
-      <td>${parceiro === 'xml' ? (c.tem_xml ? (c.responsavel_xml ? esc(c.responsavel_xml) : ninguem) : ninguem) : (c.faturista ? esc(c.faturista) : ninguem)}</td></tr>`).join('')}</tbody></table></div>`);
 
   let corpo;
-  if (s.sub === 'meus') {
-    const abertos = [...new Set([...fatura, ...passaXml])].filter((c) => c.aberto_hoje);
-    corpo = `
-      <div class="kpis">
-        ${fatura.length || eu.funcao !== 'xml' ? `<div class="kpi"><span>Convênios que eu faturo</span><b>${fatura.length}</b></div>` : ''}
-        ${passaXml.length || eu.funcao !== 'faturamento' ? `<div class="kpi"><span>Em que passo o XML</span><b>${passaXml.length}</b></div>` : ''}
-        <div class="kpi ${abertos.length ? 'destaque' : ''}"><span>Portais abertos hoje</span><b>${abertos.length}</b><small>${abertos.map((c) => esc(c.nome)).join(', ') || 'nenhum'}</small></div>
-      </div>
-      ${eu.perfil !== 'faturista' || fatura.length || eu.funcao !== 'xml' ? `<div class="cartao"><h2>Convênios que eu faturo</h2>${tabelaMeus(fatura, 'xml')}</div>` : ''}
-      ${eu.perfil !== 'faturista' || passaXml.length || eu.funcao !== 'faturamento' ? `<div class="cartao"><h2>Convênios em que passo o XML</h2>${tabelaMeus(passaXml, 'fatura')}</div>` : ''}
-      <p class="apagado" style="font-size:12px">A divisão é feita pela coordenação. Se algum convênio estiver faltando ou sobrando, fale com ela.</p>`;
-  } else {
+  if (s.sub === 'todos') {
     const termo = s.busca.trim().toLowerCase();
     const lista = estado.convenios.filter((c) => c.ativo
-      && (!termo || c.nome.toLowerCase().includes(termo))
+      && (!termo || c.nome.toLowerCase().includes(termo) || (c.particularidades || '').toLowerCase().includes(termo))
       && (!s.pessoa || c.faturista_id === Number(s.pessoa) || c.xml_id === Number(s.pessoa))
-      && (!s.xml || String(Number(c.tem_xml)) === s.xml));
+      && (!s.tag || (s.tag === 'vazio' ? TAGS.every(([k]) => c[k] == null) && !c.particularidades : c[s.tag] === true)));
+    const semInfo = estado.convenios.filter((c) => c.ativo && TAGS.every(([k]) => c[k] == null) && !c.particularidades).length;
     corpo = `<div class="cartao">
       <div class="filtros">
-        <div class="campo"><label>Buscar</label><input id="cv-busca" value="${esc(s.busca)}" placeholder="Nome do convênio"></div>
+        <div class="campo"><label>Buscar</label><input id="cv-busca" value="${esc(s.busca)}" placeholder="Convênio ou texto das observações"></div>
+        <div class="campo"><label>Mostrar</label><select id="cv-tag"><option value="">Todos</option>
+          ${TAGS.map(([k, sim]) => `<option value="${k}" ${s.tag === k ? 'selected' : ''}>${sim}</option>`).join('')}
+          <option value="vazio" ${s.tag === 'vazio' ? 'selected' : ''}>Sem particularidades informadas</option></select></div>
         <div class="campo"><label>Pessoa</label><select id="cv-pessoa">${opcoesPessoa(s.pessoa, 'Todas')}</select></div>
-        <div class="campo"><label>XML</label><select id="cv-xml"><option value="">Todos</option>
-          <option value="1" ${s.xml === '1' ? 'selected' : ''}>Com XML</option><option value="0" ${s.xml === '0' ? 'selected' : ''}>Sem XML</option></select></div>
       </div>
-      <p class="apagado" style="margin:-4px 0 12px;font-size:12px">${lista.length} convênio(s) · os seus aparecem destacados</p>
-      <div class="tabela-caixa"><table>
-        <thead><tr><th>Convênio</th><th>Quem fatura</th><th>Quem passa o XML</th><th>XML</th><th>Prazo do portal</th></tr></thead>
-        <tbody>${lista.map((c) => `<tr class="${c.faturista_id === eu.id || c.xml_id === eu.id ? 'linha-minha' : ''}"><td><b>${esc(c.nome)}</b></td>
-          <td>${c.faturista ? esc(c.faturista) : ninguem}</td><td>${c.tem_xml ? (c.responsavel_xml ? esc(c.responsavel_xml) : ninguem) : ninguem}</td>
-          <td>${xmlSelo(c)}</td><td>${prazo(c)}</td></tr>`).join('') || '<tr><td colspan="5" class="vazio">Nenhum convênio nesse filtro.</td></tr>'}</tbody></table></div></div>`;
+      <p class="apagado" style="margin:-4px 0 12px;font-size:12px">${lista.length} convênio(s)${semInfo ? ` · ${semInfo} ainda sem particularidades` : ''}${podeEditar ? ' · clique em "Editar" para preencher' : ''}</p>
+      <div class="conv-grade">${lista.map((c) => `<article class="conv-card ${c.faturista_id === eu.id || c.xml_id === eu.id ? 'meu' : ''}" data-id="${c.id}">
+          <header><b>${esc(c.nome)}</b>${podeEditar ? '<button class="btn btn-claro btn-mini" data-part>Editar</button>' : ''}</header>
+          <div class="tags">${etiquetas(c)}</div>
+          ${c.particularidades ? `<p class="conv-obs">${esc(c.particularidades).replace(/\n/g, '<br>')}</p>` : ''}
+          <footer><span>Fatura: ${c.faturista ? esc(c.faturista) : ninguem}</span><span>XML: ${c.tem_xml ? (c.responsavel_xml ? esc(c.responsavel_xml) : ninguem) : 'sem XML'}</span>
+            <span>Portal: ${c.prazo_texto ? esc(c.prazo_texto) : ninguem}${c.aberto_hoje ? ' <span class="selo conferido">aberto hoje</span>' : ''}</span></footer>
+        </article>`).join('') || '<div class="vazio">Nenhum convênio nesse filtro.</div>'}</div></div>`;
+  } else {
+    const ordenar = (l) => [...l].sort((x, y) => y.aberto_hoje - x.aberto_hoje || x.nome.localeCompare(y.nome));
+    const tabelaMeus = (lista, parceiro) => (!lista.length ? '<div class="vazio">Nenhum convênio.</div>' : `<div class="tabela-caixa"><table>
+      <thead><tr><th>Convênio</th><th>Particularidades</th><th>Prazo do portal</th><th>${parceiro === 'xml' ? 'Quem passa o XML' : 'Quem fatura'}</th></tr></thead>
+      <tbody>${ordenar(lista).map((c) => `<tr><td><b>${esc(c.nome)}</b></td><td><div class="tags">${etiquetas(c)}</div></td><td>${prazo(c)}</td>
+        <td>${parceiro === 'xml' ? (c.tem_xml ? (c.responsavel_xml ? esc(c.responsavel_xml) : ninguem) : 'sem XML') : (c.faturista ? esc(c.faturista) : ninguem)}</td></tr>`).join('')}</tbody></table></div>`);
+    corpo = `
+      ${fatura.length || eu.funcao !== 'xml' ? `<div class="cartao"><h2>Convênios que eu faturo <small class="apagado">${fatura.length}</small></h2>${tabelaMeus(fatura, 'xml')}</div>` : ''}
+      ${passaXml.length || eu.funcao !== 'faturamento' ? `<div class="cartao"><h2>Convênios em que passo o XML <small class="apagado">${passaXml.length}</small></h2>${tabelaMeus(passaXml, 'fatura')}</div>` : ''}
+      <p class="apagado" style="font-size:12px">A divisão é feita pela coordenação. Se algum convênio estiver faltando ou sobrando, fale com ela.</p>`;
   }
 
   $('#conteudo').innerHTML = `
-    <div class="topo"><div><h1>Convênios</h1><p>Os convênios de cada pessoa, segundo a divisão da coordenação, e a lista completa.</p></div></div>
-    <div class="subabas">${[['meus', 'Meus convênios'], ['todos', 'Todos os convênios']].map(([k, v]) => `<button data-sub="${k}" class="${s.sub === k ? 'ativa' : ''}">${v}</button>`).join('')}</div>
+    <div class="topo"><div><h1>Convênios</h1><p>As particularidades de cada convênio: pacote, autorização, nº da guia, senha e observações.</p></div></div>
+    <div class="subabas">${[['todos', 'Todos os convênios'], ['meus', 'Meus convênios']].map(([k, v]) => `<button data-sub="${k}" class="${s.sub === k ? 'ativa' : ''}">${v}</button>`).join('')}</div>
     ${corpo}`;
-  $('.subabas').addEventListener('click', (e) => { const b = e.target.closest('[data-sub]'); if (b) { s.sub = b.dataset.sub; telaConvenios(); } });
+  $('.subabas').addEventListener('click', (e) => { const b2 = e.target.closest('[data-sub]'); if (b2) { s.sub = b2.dataset.sub; telaConvenios(); } });
   $('#cv-busca')?.addEventListener('input', (e) => { s.busca = e.target.value; const pos = e.target.selectionStart; telaConvenios(); const i = $('#cv-busca'); i.focus(); i.setSelectionRange(pos, pos); });
   $('#cv-pessoa')?.addEventListener('change', (e) => { s.pessoa = e.target.value; telaConvenios(); });
-  $('#cv-xml')?.addEventListener('change', (e) => { s.xml = e.target.value; telaConvenios(); });
+  $('#cv-tag')?.addEventListener('change', (e) => { s.tag = e.target.value; telaConvenios(); });
+  $('.conv-grade')?.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-part]')) return;
+    editarParticularidades(estado.convenios.find((c) => c.id === Number(e.target.closest('[data-id]').dataset.id)));
+  });
+}
+
+// Janela de edição: Sim / Não / Não informado para cada etiqueta + observações
+function editarParticularidades(c) {
+  const opcao = (k, valor, rotulo) => `<label class="seg ${c[k] === valor ? 'ativo' : ''}"><input type="radio" name="${k}" value="${valor === null ? 'nd' : valor}" ${c[k] === valor ? 'checked' : ''}>${rotulo}</label>`;
+  modal(`<h2>Particularidades · ${esc(c.nome)}</h2><form class="form-part">
+    ${TAGS.map(([k, sim]) => `<div class="linha-part"><span>${sim.replace('Precisa de ', 'Precisa de ').replace('Pacote', 'Trabalha com pacote?')}</span>
+      <div class="segmentos">${opcao(k, true, 'Sim')}${opcao(k, false, 'Não')}${opcao(k, null, 'Não sei')}</div></div>`).join('')}
+    <div class="campo" style="margin-top:12px"><label>Observações / particularidades</label>
+      <textarea name="texto" rows="5" placeholder="Ex.: guia só com assinatura do paciente; autorização pelo portal X; senha vale 30 dias…">${esc(c.particularidades || '')}</textarea></div>
+    <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Cancelar</button><button class="btn btn-primario">Salvar</button></div></form>`,
+  (el, fechar) => {
+    const form = $('form', el);
+    form.addEventListener('change', (e) => {
+      const r = e.target.closest('input[type=radio]');
+      if (r) $$(`input[name="${r.name}"]`, form).forEach((i) => i.closest('.seg').classList.toggle('ativo', i.checked));
+    });
+    form.addEventListener('submit', tentar(async (e) => {
+      e.preventDefault();
+      const v = Object.fromEntries(new FormData(form));
+      const particularidades = { texto: v.texto };
+      for (const [k] of TAGS) particularidades[k] = v[k] === 'nd' || v[k] === undefined ? null : v[k] === 'true';
+      const novo = await api(`/api/convenios/${c.id}`, { method: 'PUT', corpo: { particularidades } });
+      estado.convenios = estado.convenios.map((x) => (x.id === c.id ? novo : x));
+      fechar(); avisar(`${novo.nome}: particularidades salvas.`); telaConvenios();
+    }));
+  });
 }
 
 // ---------- Aba: Gestão ----------

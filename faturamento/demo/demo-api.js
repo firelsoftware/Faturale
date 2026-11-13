@@ -2,7 +2,7 @@
 // Simula a API do Django dentro do navegador: as telas são as mesmas do sistema.
 // Os dados ficam só neste navegador (localStorage). Nada é enviado a lugar nenhum.
 (() => {
-  const CHAVE = 'faturale-demo-v3';
+  const CHAVE = 'faturale-demo-v4';
   const fetchOriginal = window.fetch.bind(window);
   let db = null;
   const arquivos = {}; // 'lote:ID' / 'xml:ID' -> object URL (só nesta sessão)
@@ -286,9 +286,16 @@
 
     if (r0 === 'convenios') {
       if (metodo === 'GET') return json([...db.convenios].sort((a, b) => normalizar(a.nome).localeCompare(normalizar(b.nome))).map(convJson));
-      const soPrazo = metodo === 'PUT' && Object.keys(corpo).every((k) => k === 'prazo');
+      const soPrazo = metodo === 'PUT' && Object.keys(corpo).every((k) => k === 'prazo' || k === 'particularidades');
       if (soPrazo ? !pode('gestao') : !pode('coordenacao')) return erro('Só a coordenação muda isso. A supervisão pode mudar o prazo do portal.', 403);
-      if (soPrazo) { const c = conv(r1); try { definirPrazo(c, corpo.prazo); } catch (e) { return erro(e.message); } salvar(); return json(convJson(c)); }
+      if (soPrazo) {
+        const c = conv(r1);
+        if (corpo.prazo) { try { definirPrazo(c, corpo.prazo); } catch (e) { return erro(e.message); } }
+        if (corpo.particularidades) { const p2 = corpo.particularidades;
+          for (const k of ['pacote', 'precisa_autorizacao', 'precisa_guia', 'precisa_senha']) if (k in p2) c[k] = p2[k] === null ? null : !!p2[k];
+          if ('texto' in p2) c.particularidades = String(p2.texto || '').trim().slice(0, 4000); }
+        salvar(); return json(convJson(c));
+      }
       if (metodo === 'DELETE') {
         if (db.lotes.some((l) => l.convenio_id === Number(r1))) return erro('Esse convênio já tem lotes. Desative em vez de excluir.', 409);
         db.convenios = db.convenios.filter((c) => c.id !== Number(r1)); salvar(); return json({ ok: true });

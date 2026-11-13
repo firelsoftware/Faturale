@@ -85,6 +85,12 @@ class Convenio(models.Model):
     prazo_dia_util = models.PositiveSmallIntegerField('até o Nº dia útil', null=True, blank=True)
     prazo_hora = models.CharField('até que horas', max_length=10, blank=True)  # "17h"
     prazo_texto = models.CharField('prazo do portal', max_length=80, blank=True)  # como aparece na tela
+    # Particularidades (aba Convênios). Vazio = ainda não informado.
+    pacote = models.BooleanField('trabalha com pacote', null=True, blank=True)
+    precisa_autorizacao = models.BooleanField('precisa de autorização', null=True, blank=True)
+    precisa_guia = models.BooleanField('precisa de nº da guia', null=True, blank=True)
+    precisa_senha = models.BooleanField('precisa de senha', null=True, blank=True)
+    particularidades = models.TextField('observações / particularidades', blank=True)
 
     class Meta:
         ordering = ['nome']
