@@ -132,6 +132,9 @@ demonstração** tira os lotes fictícios. Para começar do zero, apague a pasta
   autorização**, **precisa de nº da guia**, **precisa de senha** (sim / não / não informado) e
   observações. Filtros por etiqueta e busca. Supervisão e coordenação editam; os demais consultam.
   Em "Meus convênios", o que a pessoa fatura e passa de XML.
+- **Dúvidas sobre convênios** — botão "💬 Dúvida" em cada convênio (também na consulta sem login, com o
+  nome). Supervisão, coordenação e diretoria recebem um alerta e respondem na caixa "Dúvidas em aberto"
+  da aba Convênios; a resposta fica no convênio para todos verem.
 - **Gestão** — lotes da equipe (conferir, devolver com motivo, editar, excluir, filtro por situação
   do XML) e usuários.
 - **Coordenação**

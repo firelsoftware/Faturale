@@ -493,3 +493,14 @@ main { max-width: 1440px; margin: 0 auto; }
 /* Cartão "Todos" (consulta sem login) na entrada */
 .pessoas button.publico { border-style: dashed; border-color: rgba(76, 141, 255, .55); }
 .pessoas button.publico .avatar { background: rgba(255, 255, 255, .12); }
+
+/* Dúvidas sobre convênios */
+.conv-card header .acoes { flex-wrap: nowrap; }
+.conv-card .chat-conta { min-width: 18px; height: 18px; font-size: 10.5px; padding: 0 5px; }
+.duvidas-abertas { border-color: #f0dca6; background: #fffdf5; }
+.duvida { border: 1px solid var(--borda); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: #fff; }
+.duvida p { margin: 4px 0 0; font-size: 13.5px; overflow-wrap: anywhere; }
+.duvida-resposta { margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--verde); background: var(--verde-suave); border-radius: 6px; }
+.duvida-resposta small { color: #0b6b46; }
+.duvida-responder { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.duvidas-lista { max-height: 45vh; overflow: auto; margin-bottom: 8px; }

@@ -24,7 +24,7 @@ const XML = { enviado: 'XML enviado', pendente: 'XML pendente', na: 'Sem XML' };
 const FUNCOES = { faturamento: 'Fatura', xml: 'XML', ambos: 'Fatura e XML' };
 const cookie = (nome) => document.cookie.split('; ').find((c) => c.startsWith(`${nome}=`))?.split('=')[1];
 
-const ROTAS_PUBLICAS = ['/api/convenios', '/api/pessoas', '/api/calendario/proximos', '/api/calendario'];
+const ROTAS_PUBLICAS = ['/api/convenios', '/api/pessoas', '/api/calendario/proximos', '/api/calendario', '/api/duvidas'];
 async function api(url, opcoes = {}) {
   if (estado?.usuario?.publico) {
     const base = ROTAS_PUBLICAS.find((r) => url === r || url.startsWith(`${r}?`));
@@ -1279,7 +1279,9 @@ function telaConvenios() {
       </div>
       <p class="apagado" style="margin:-4px 0 12px;font-size:12px">${lista.length} convênio(s)${semInfo ? ` · ${semInfo} ainda sem particularidades` : ''}${podeEditar ? ' · clique em "Editar" para preencher' : ''}</p>
       <div class="conv-grade">${lista.map((c) => `<article class="conv-card ${c.faturista_id === eu.id || c.xml_id === eu.id ? 'meu' : ''}" data-id="${c.id}">
-          <header><b>${esc(c.nome)}</b>${podeEditar ? '<button class="btn btn-claro btn-mini" data-part>Editar</button>' : ''}</header>
+          <header><b>${esc(c.nome)}</b><span class="acoes">
+            <button class="btn btn-claro btn-mini" data-duvida title="Perguntar ou ver as dúvidas sobre este convênio">💬 Dúvida${c.duvidas_abertas ? ` <span class="chat-conta">${c.duvidas_abertas}</span>` : c.duvidas_total ? ` <small class="apagado">(${c.duvidas_total})</small>` : ''}</button>
+            ${podeEditar ? '<button class="btn btn-claro btn-mini" data-part>Editar</button>' : ''}</span></header>
           <div class="tags">${etiquetas(c)}</div>
           ${c.particularidades ? `<p class="conv-obs">${esc(c.particularidades).replace(/\n/g, '<br>')}</p>` : ''}
           <footer><span>Fatura: ${c.faturista ? esc(c.faturista) : ninguem}</span><span>XML: ${c.tem_xml ? (c.responsavel_xml ? esc(c.responsavel_xml) : ninguem) : 'sem XML'}</span>
@@ -1299,6 +1301,7 @@ function telaConvenios() {
 
   $('#conteudo').innerHTML = `
     <div class="topo"><div><h1>Convênios</h1><p>As particularidades de cada convênio: pacote, autorização, nº da guia, senha e observações.</p></div></div>
+    ${podeEditar && s.sub === 'todos' ? '<div id="duv-abertas"></div>' : ''}
     <div class="subabas ${eu.publico ? 'oculto' : ''}">${[['todos', 'Todos os convênios'], ['meus', 'Meus convênios']].map(([k, v]) => `<button data-sub="${k}" class="${s.sub === k ? 'ativa' : ''}">${v}</button>`).join('')}</div>
     ${corpo}`;
   $('.subabas').addEventListener('click', (e) => { const b2 = e.target.closest('[data-sub]'); if (b2) { s.sub = b2.dataset.sub; telaConvenios(); } });
@@ -1306,8 +1309,79 @@ function telaConvenios() {
   $('#cv-pessoa')?.addEventListener('change', (e) => { s.pessoa = e.target.value; telaConvenios(); });
   $('#cv-tag')?.addEventListener('change', (e) => { s.tag = e.target.value; telaConvenios(); });
   $('.conv-grade')?.addEventListener('click', (e) => {
-    if (!e.target.closest('[data-part]')) return;
-    editarParticularidades(estado.convenios.find((c) => c.id === Number(e.target.closest('[data-id]').dataset.id)));
+    const card = e.target.closest('[data-id]');
+    if (!card) return;
+    const conv = estado.convenios.find((c) => c.id === Number(card.dataset.id));
+    if (e.target.closest('[data-part]')) editarParticularidades(conv);
+    if (e.target.closest('[data-duvida]')) abrirDuvidas(conv);
+  });
+  if (podeEditar && s.sub === 'todos') carregarDuvidasAbertas();
+}
+
+// ---------- Dúvidas sobre convênios ----------
+// Qualquer pessoa pergunta pelo botão "💬 Dúvida" do convênio; supervisão, coordenação e diretoria
+// respondem (caixa "Dúvidas em aberto" no topo e alerta). As respostas ficam no convênio para todos verem.
+const quando = (iso) => `${dataBR(iso.slice(0, 10))} ${iso.slice(11, 16)}`;
+function itemDuvida(d, responder) {
+  return `<div class="duvida" data-duvida-id="${d.id}">
+    <div class="duvida-pergunta"><b>${esc(d.autor)}</b> <small class="apagado">${quando(d.criado_em)}</small>${responder === 'lista' ? ` · <b>${esc(d.convenio)}</b>` : ''}
+      <p>${esc(d.texto).replace(/\n/g, '<br>')}</p></div>
+    ${d.resposta ? `<div class="duvida-resposta"><small>Resposta de <b>${esc(d.respondida_por || '')}</b> · ${quando(d.respondida_em)}</small><p>${esc(d.resposta).replace(/\n/g, '<br>')}</p></div>`
+      : responder ? `<form class="duvida-responder"><textarea name="resposta" rows="2" placeholder="Escreva a resposta…" required></textarea>
+          <div class="acoes"><button type="button" class="btn btn-perigo btn-mini" data-apagar-duvida>Apagar</button><button class="btn btn-primario btn-mini">Responder</button></div></form>`
+      : '<small class="apagado">Aguardando resposta.</small>'}</div>`;
+}
+function ligarRespostas(caixa, depois) {
+  caixa.addEventListener('submit', tentar(async (e) => {
+    const f = e.target.closest('.duvida-responder');
+    if (!f) return;
+    e.preventDefault();
+    await api(`/api/duvidas/${f.closest('[data-duvida-id]').dataset.duvidaId}`, { method: 'PATCH', corpo: { resposta: f.resposta.value } });
+    avisar('Resposta enviada.'); await carregarListas(); carregarAlertas(); depois();
+  }));
+  caixa.addEventListener('click', tentar(async (e) => {
+    if (!e.target.closest('[data-apagar-duvida]')) return;
+    if (!confirm('Apagar esta dúvida?')) return;
+    await api(`/api/duvidas/${e.target.closest('[data-duvida-id]').dataset.duvidaId}`, { method: 'DELETE' });
+    avisar('Dúvida apagada.'); await carregarListas(); carregarAlertas(); depois();
+  }));
+}
+const carregarDuvidasAbertas = tentar(async () => {
+  const caixa = $('#duv-abertas');
+  if (!caixa) return;
+  const lista = await api('/api/duvidas?abertas=1');
+  caixa.innerHTML = !lista.length ? '' : `<div class="cartao duvidas-abertas"><h2>Dúvidas em aberto <span class="chat-conta">${lista.length}</span>
+      <small class="apagado">responda aqui; se mudar alguma regra, ajuste também as particularidades do convênio</small></h2>
+    ${lista.map((d) => itemDuvida(d, 'lista')).join('')}</div>`;
+  ligarRespostas(caixa, telaConvenios);
+});
+function abrirDuvidas(c) {
+  const eu = estado.usuario;
+  const podeResponder = eu.abas.includes('gestao');
+  modal(`<h2>💬 Dúvidas · ${esc(c.nome)}</h2>
+    <div class="duvidas-lista"><div class="vazio">Carregando…</div></div>
+    <form class="form-duvida">
+      ${eu.publico ? '<div class="campo"><label>Seu nome</label><input name="nome" required maxlength="80"></div>' : ''}
+      <div class="campo"><label>Sua dúvida sobre ${esc(c.nome)}</label><textarea name="texto" rows="3" required maxlength="2000" placeholder="Ex.: precisa de senha para exame de imagem?"></textarea></div>
+      <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Fechar</button><button class="btn btn-primario">Enviar dúvida</button></div>
+    </form>`, (el, fechar) => {
+    const lista = $('.duvidas-lista', el);
+    const carregar = tentar(async () => {
+      const ds = await api(`/api/duvidas?convenio=${c.id}`);
+      lista.innerHTML = ds.length ? ds.map((d) => itemDuvida(d, podeResponder)).join('')
+        : '<p class="apagado" style="margin:0 0 10px">Ninguém perguntou nada ainda sobre este convênio.</p>';
+    });
+    ligarRespostas(lista, () => { carregar(); if (estado.aba === 'convenios') telaConvenios(); });
+    carregar();
+    $('.form-duvida', el).addEventListener('submit', tentar(async (e) => {
+      e.preventDefault();
+      const v = Object.fromEntries(new FormData(e.target));
+      await api('/api/duvidas', { method: 'POST', corpo: { convenioId: c.id, texto: v.texto, nome: v.nome } });
+      e.target.texto.value = '';
+      avisar('Dúvida enviada. Quem cuida dos convênios vai responder aqui.');
+      await carregar(); await carregarListas();
+      if (estado.aba === 'convenios') telaConvenios(); // atualiza o número no cartão
+    }));
   });
 }
 

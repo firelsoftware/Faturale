@@ -22,7 +22,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 
 from .extrator import extrair_lote, ler_protocolo_xml
 from .management.commands.semear import normalizar
-from .models import Convenio, EntregaCalendario, EnvioXml, Feriado, Lote, Mensagem, Usuario
+from .models import Convenio, DuvidaConvenio, EntregaCalendario, EnvioXml, Feriado, Lote, Mensagem, Usuario
 
 
 # ---------- Utilidades ----------
@@ -254,6 +254,8 @@ def convenio_json(c, feriados=None):
         'aberto_hoje': aberto_hoje(c, feriados),
         'pacote': c.pacote, 'precisa_autorizacao': c.precisa_autorizacao, 'precisa_guia': c.precisa_guia,
         'precisa_senha': c.precisa_senha, 'particularidades': c.particularidades,
+        'duvidas_abertas': getattr(c, 'n_duvidas_abertas', None) if hasattr(c, 'n_duvidas_abertas') else c.duvidas.filter(resposta='').count(),
+        'duvidas_total': getattr(c, 'n_duvidas', 0),
     }
 
 
@@ -311,7 +313,9 @@ def aplicar_convenio(c, d):
 @api(None, ('GET', 'POST'))
 def convenios(request):
     if request.method == 'GET':
-        qs = sorted(Convenio.objects.select_related('faturista', 'responsavel_xml'), key=lambda c: normalizar(c.nome))
+        qs = sorted(Convenio.objects.select_related('faturista', 'responsavel_xml')
+                    .annotate(n_duvidas_abertas=Count('duvidas', filter=Q(duvidas__resposta='')), n_duvidas=Count('duvidas')),
+                    key=lambda c: normalizar(c.nome))
         feriados = feriados_do_mes()
         return JsonResponse([convenio_json(c, feriados) for c in qs], safe=False)
     if not request.user.pode('coordenacao'):
@@ -1112,6 +1116,11 @@ def alertas(request):
         lista.insert(0, {'nivel': 'urgente', 'aba': 'faturamento' if not u.ve_todos else 'gestao',
                          'titulo': 'Valor diferente do protocolo do convênio — corrija o lote' if not u.ve_todos
                          else 'Lotes com valor diferente do protocolo do convênio', 'itens': itens})
+    if u.pode('gestao'):
+        abertas = list(DuvidaConvenio.objects.filter(resposta='').select_related('convenio').order_by('id')[:30])
+        if abertas:
+            lista.insert(0, {'nivel': 'atencao', 'aba': 'convenios', 'titulo': f'{len(abertas)} dúvida(s) sobre convênios para responder',
+                             'itens': sorted({d.convenio.nome for d in abertas})})
     return JsonResponse({'hoje': iso(agora), 'alertas': lista})
 
 
@@ -1129,7 +1138,8 @@ def versao(request):
     e = EnvioXml.objects.aggregate(n=Count('id'), m=Max('atualizado_em'))
     c = EntregaCalendario.objects.aggregate(n=Count('id'), m=Max('concluido_em'))
     marca = lambda d: f"{d['n']}-{d['m'].timestamp() if d['m'] else 0}"
-    return JsonResponse({'versao': f'{marca(l)}|{marca(e)}|{marca(c)}'})
+    dv = DuvidaConvenio.objects.aggregate(n=Count('id'), r=Count('id', filter=~Q(resposta='')))
+    return JsonResponse({'versao': f"{marca(l)}|{marca(e)}|{marca(c)}|{dv['n']}-{dv['r']}"})
 
 
 # ---------- Mensagens entre a equipe ----------
@@ -1277,7 +1287,9 @@ def _so_get(fn):
 
 @_so_get
 def publico_convenios(request):
-    qs = sorted(Convenio.objects.filter(ativo=True).select_related('faturista', 'responsavel_xml'), key=lambda c: normalizar(c.nome))
+    qs = sorted(Convenio.objects.filter(ativo=True).select_related('faturista', 'responsavel_xml')
+                .annotate(n_duvidas_abertas=Count('duvidas', filter=Q(duvidas__resposta='')), n_duvidas=Count('duvidas')),
+                key=lambda c: normalizar(c.nome))
     feriados = feriados_do_mes()
     return JsonResponse([convenio_json(c, feriados) for c in qs], safe=False)
 
@@ -1317,3 +1329,72 @@ def publico_calendario(request):
 def publico_calendario_proximos(request):
     dias = list(EntregaCalendario.objects.filter(data__gte=hoje()).values_list('data', flat=True).distinct().order_by('data')[:3])
     return JsonResponse({'hoje': iso(hoje()), 'entregas': [_entrega_publica(e) for e in entregas_qs().filter(data__in=dias)]})
+
+
+# ---------- Dúvidas sobre convênios ----------
+def duvida_json(d):
+    return {'id': d.id, 'convenio_id': d.convenio_id, 'convenio': d.convenio.nome, 'texto': d.texto,
+            'autor': d.autor.nome if d.autor else (d.autor_nome or 'Consulta sem login'),
+            'criado_em': timezone.localtime(d.criado_em).isoformat(timespec='minutes'),
+            'resposta': d.resposta, 'respondida_por': d.respondida_por.nome if d.respondida_por else None,
+            'respondida_em': timezone.localtime(d.respondida_em).isoformat(timespec='minutes') if d.respondida_em else None}
+
+
+def _duvidas_qs():
+    return DuvidaConvenio.objects.select_related('convenio', 'autor', 'respondida_por')
+
+
+def _criar_duvida(request, autor):
+    d = request.dados if hasattr(request, 'dados') else json.loads(request.body or '{}')
+    c = Convenio.objects.filter(pk=d.get('convenioId') or 0).first()
+    texto = str(d.get('texto') or '').strip()
+    if not c or not texto:
+        return erro('Escolha o convênio e escreva a dúvida.')
+    nome = '' if autor else str(d.get('nome') or '').strip()[:80]
+    if not autor and not nome:
+        return erro('Informe o seu nome.')
+    duv = DuvidaConvenio.objects.create(convenio=c, autor=autor, autor_nome=nome, texto=texto[:2000])
+    return JsonResponse(duvida_json(_duvidas_qs().get(pk=duv.pk)))
+
+
+@api(None, ('GET', 'POST'))
+def duvidas(request):
+    """GET ?convenio=ID: dúvidas daquele convênio (todos veem, como perguntas e respostas).
+    GET ?abertas=1: as que ainda não têm resposta (supervisão, coordenação e diretoria)."""
+    if request.method == 'POST':
+        return _criar_duvida(request, request.user)
+    qs = _duvidas_qs()
+    if request.GET.get('abertas'):
+        if not request.user.pode('gestao'):
+            return erro('Sem acesso.', 403)
+        qs = qs.filter(resposta='').order_by('id')
+    elif request.GET.get('convenio'):
+        qs = qs.filter(convenio_id=request.GET['convenio'])
+    else:
+        return erro('Informe o convênio.')
+    return JsonResponse([duvida_json(d) for d in qs[:200]], safe=False)
+
+
+@api('gestao', ('PATCH', 'DELETE'))
+def duvida(request, pk):
+    d = _duvidas_qs().filter(pk=pk).first()
+    if not d:
+        return erro('Dúvida não encontrada.', 404)
+    if request.method == 'DELETE':
+        d.delete()
+        return JsonResponse({'ok': True})
+    resposta = str(request.dados.get('resposta') or '').strip()
+    if not resposta:
+        return erro('Escreva a resposta.')
+    d.resposta, d.respondida_por, d.respondida_em = resposta[:4000], request.user, timezone.now()
+    d.save()
+    return JsonResponse(duvida_json(d))
+
+
+def publico_duvidas(request):
+    """Consulta sem login: vê as dúvidas de um convênio e pode mandar uma (com o nome)."""
+    if request.method == 'POST':
+        return _criar_duvida(request, None)
+    if request.method != 'GET' or not request.GET.get('convenio'):
+        return erro('Informe o convênio.')
+    return JsonResponse([duvida_json(d) for d in _duvidas_qs().filter(convenio_id=request.GET['convenio'])[:200]], safe=False)

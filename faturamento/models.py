@@ -235,3 +235,23 @@ class Mensagem(models.Model):
 
     def __str__(self):
         return f'{self.autor} → {self.destinatario or "equipe"}: {self.texto[:40]}'
+
+
+class DuvidaConvenio(models.Model):
+    """Dúvida sobre um convênio (aba Convênios). Supervisão/coordenação/diretoria respondem."""
+    convenio = models.ForeignKey(Convenio, models.CASCADE, related_name='duvidas')
+    autor = models.ForeignKey(Usuario, models.SET_NULL, null=True, blank=True, related_name='duvidas')
+    autor_nome = models.CharField('nome (consulta sem login)', max_length=80, blank=True)
+    texto = models.TextField(max_length=2000)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    resposta = models.TextField(blank=True)
+    respondida_por = models.ForeignKey(Usuario, models.SET_NULL, null=True, blank=True, related_name='+')
+    respondida_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-id']
+        verbose_name = 'dúvida sobre convênio'
+        verbose_name_plural = 'dúvidas sobre convênios'
+
+    def __str__(self):
+        return f'{self.convenio}: {self.texto[:40]}'

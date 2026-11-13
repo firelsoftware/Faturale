@@ -109,7 +109,8 @@
   const senhaDe = (u) => (db.senhas ||= {})[u.id] || SENHA_INICIAL;
   const precisaTrocar = (u) => (db.trocar ||= {})[u.id] !== false;
   const perfilJson = (u) => ({ id: u.id, nome: u.nome, login: u.login, perfil: u.perfil, abas: abasDe(u), funcao: u.funcao || 'ambos', modoDemo: false, regraGuias: 'menor', trocarSenha: precisaTrocar(u) });
-  const convJson = (c) => ({ ...c, faturista: nome(c.faturista_id), responsavel_xml: nome(c.xml_id), aberto_hoje: abertoHoje(c) });
+  const duvidasDe = (c) => (db.duvidas ||= []).filter((d) => d.convenio_id === c.id);
+  const convJson = (c) => ({ ...c, duvidas_abertas: duvidasDe(c).filter((d) => !d.resposta).length, duvidas_total: duvidasDe(c).length, faturista: nome(c.faturista_id), responsavel_xml: nome(c.xml_id), aberto_hoje: abertoHoje(c) });
   const divergencia = (l) => {
     const es = db.envios.filter((e) => e.lote_id === l.id && e.valor_protocolo != null).sort((a, b) => a.data_envio.localeCompare(b.data_envio) || a.id - b.id);
     const e = es.at(-1);
@@ -264,6 +265,20 @@
   const validarLote = (b) => (!String(b.numeroLote || '').trim() ? 'Informe o número do lote.' : !(Number(b.qtdGuias) > 0) ? 'Quantidade de guias inválida.'
     : !/^\d{4}-\d{2}$/.test(b.competencia || '') ? 'Competência inválida.' : !/^\d{4}-\d{2}-\d{2}$/.test(b.dataLancamento || '') ? 'Data inválida.' : null);
 
+  // ---------- dúvidas sobre convênios ----------
+  const duvJson = (d) => ({ ...d, convenio: conv(d.convenio_id)?.nome || '', autor: d.autor_id ? nome(d.autor_id) : (d.autor_nome || 'Consulta sem login'),
+    respondida_por: d.respondida_por_id ? nome(d.respondida_por_id) : null });
+  function criarDuvida(corpo, autor) {
+    const c = conv(corpo.convenioId); const texto = String(corpo.texto || '').trim();
+    if (!c || !texto) return erro('Escolha o convênio e escreva a dúvida.');
+    const nomeP = autor ? '' : String(corpo.nome || '').trim().slice(0, 80);
+    if (!autor && !nomeP) return erro('Informe o seu nome.');
+    db.duvidas ||= [];
+    const d = { id: novoId(db.duvidas), convenio_id: c.id, autor_id: autor?.id || null, autor_nome: nomeP, texto: texto.slice(0, 2000),
+      criado_em: new Date().toISOString().slice(0, 16), resposta: '', respondida_por_id: null, respondida_em: null };
+    db.duvidas.push(d); salvar(); return json(duvJson(d));
+  }
+
   // ---------- rotas ----------
   async function rota(metodo, caminho, q, corpo) {
     const p = caminho.split('/').filter(Boolean).slice(1); // sem "api"
@@ -276,9 +291,11 @@
     }
     // Consulta sem login ("Todos"): só convênios e calendário, só leitura
     if (r0 === 'publico') {
+      if (r1 === 'duvidas' && metodo === 'POST') return criarDuvida(corpo, null);
       if (metodo !== 'GET') return erro('Só consulta.', 405);
       const anon = { id: 0, perfil: 'publico' };
       const entPub = (e) => ({ ...entregaJson(e, anon), meu: false, pode_concluir: false, concluido_por: null });
+      if (r1 === 'duvidas') return json((db.duvidas || []).filter((d) => d.convenio_id === Number(q.get('convenio'))).sort((a, b) => b.id - a.id).map(duvJson));
       if (r1 === 'convenios') return json(db.convenios.filter((c) => c.ativo).sort((a, b) => normalizar(a.nome).localeCompare(normalizar(b.nome))).map(convJson));
       if (r1 === 'pessoas') return json(db.usuarios.filter((x) => x.ativo).map((x) => ({ id: x.id, nome: x.nome, perfil: x.perfil, funcao: x.funcao || 'ambos', fatura: fazFat(x), xml: fazXml(x) })).sort((a, b) => a.nome.localeCompare(b.nome)));
       if (r1 === 'calendario' && r2 === 'proximos') {
@@ -458,6 +475,22 @@
 
     if (r0 === 'versao') return json({ versao: `${db.lotes.length}:${db.envios.length}:${db.entregas.filter((e) => e.concluido).length}:${JSON.stringify(db.lotes.map((l) => l.status)).length}` });
 
+    if (r0 === 'duvidas') {
+      db.duvidas ||= [];
+      if (metodo === 'POST' && !r1) return criarDuvida(corpo, u);
+      if (metodo === 'GET') {
+        if (q.get('abertas')) { if (!pode('gestao')) return erro('Sem acesso.', 403); return json(db.duvidas.filter((d) => !d.resposta).sort((a, b) => a.id - b.id).map(duvJson)); }
+        return json(db.duvidas.filter((d) => d.convenio_id === Number(q.get('convenio'))).sort((a, b) => b.id - a.id).map(duvJson));
+      }
+      if (!pode('gestao')) return erro('Sem acesso.', 403);
+      const d = db.duvidas.find((x) => x.id === Number(r1));
+      if (!d) return erro('Dúvida não encontrada.', 404);
+      if (metodo === 'DELETE') { db.duvidas = db.duvidas.filter((x) => x !== d); salvar(); return json({ ok: true }); }
+      const resp = String(corpo.resposta || '').trim(); if (!resp) return erro('Escreva a resposta.');
+      Object.assign(d, { resposta: resp, respondida_por_id: u.id, respondida_em: new Date().toISOString().slice(0, 16) }); salvar();
+      return json(duvJson(d));
+    }
+
     if (r0 === 'minha-producao') {
       const ini = q.get('inicio') || '';
       const fim = q.get('fim') || hoje();
@@ -570,6 +603,8 @@
         .map((l) => `lote ${l.numero_lote} (${conv(l.convenio_id).nome}): sistema ${br(l.valor_total)} · convênio ${br(divergencia(l))}`);
       if (div.length) lista.unshift({ nivel: 'urgente', aba: veTodos(u) ? 'gestao' : 'faturamento', itens: div,
         titulo: veTodos(u) ? 'Lotes com valor diferente do protocolo do convênio' : 'Valor diferente do protocolo do convênio — corrija o lote' });
+      const abertasD = (db.duvidas || []).filter((d) => !d.resposta);
+      if (pode('gestao') && abertasD.length) lista.unshift({ nivel: 'atencao', aba: 'convenios', titulo: `${abertasD.length} dúvida(s) sobre convênios para responder`, itens: [...new Set(abertasD.map((d) => conv(d.convenio_id).nome))].sort() });
       return json({ hoje: hoje(), alertas: lista });
     }
 
