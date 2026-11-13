@@ -50,6 +50,12 @@ e, **depois** do passo 3 (já apontando para o Supabase):
 
 Os PDFs e protocolos anexados continuam na pasta `data/arquivos` do computador.
 
+## Consulta sem login ("Todos")
+
+Na entrada do portal, o cartão **Todos** abre só para leitura as abas **Convênios** (particularidades,
+prazos, quem fatura e quem passa o XML) e **Calendário**. Não mostra produção, valores, lotes nem
+mensagens, e não deixa alterar nada.
+
 ## Senhas
 
 Com `FATURALE_MODO_DEMO=0` no `.env`, clicar na pessoa pede a senha. Todo mundo começa com a

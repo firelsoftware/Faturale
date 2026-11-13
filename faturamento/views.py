@@ -1262,3 +1262,58 @@ def minha_producao(request):
         'listaXmls': [{'numero_lote': e.numero_lote, 'convenio': e.convenio.nome, 'data': iso(e.data_envio),
                        'guias': guias_envio(e), 'valor': valor_envio(e), 'amarrado': bool(e.lote)} for e in envios[:100]],
     })
+
+# ---------- Consulta sem login ("Todos", na entrada do portal) ----------
+# Só leitura: convênios (particularidades, prazos, responsáveis) e calendário de entregas.
+# Nada de produção, valores, lotes ou mensagens.
+def _so_get(fn):
+    @wraps(fn)
+    def inner(request, *a, **kw):
+        if request.method != 'GET':
+            return erro('Só consulta.', 405)
+        return fn(request, *a, **kw)
+    return inner
+
+
+@_so_get
+def publico_convenios(request):
+    qs = sorted(Convenio.objects.filter(ativo=True).select_related('faturista', 'responsavel_xml'), key=lambda c: normalizar(c.nome))
+    feriados = feriados_do_mes()
+    return JsonResponse([convenio_json(c, feriados) for c in qs], safe=False)
+
+
+@_so_get
+def publico_pessoas(request):
+    qs = Usuario.objects.filter(is_active=True).order_by('first_name')
+    return JsonResponse([{'id': u.id, 'nome': u.nome, 'perfil': u.perfil, 'funcao': u.funcao,
+                          'fatura': u.faz_faturamento, 'xml': u.faz_xml} for u in qs], safe=False)
+
+
+def _entrega_publica(e):
+    c = e.convenio
+    return {'id': e.id, 'data': iso(e.data), 'convenio_id': c.id, 'convenio': c.nome, 'observacao': e.observacao,
+            'concluido': e.concluido, 'concluido_por': None,
+            'faturista_id': c.faturista_id, 'faturista': c.faturista.nome if c.faturista else None,
+            'xml_id': c.responsavel_xml_id, 'responsavel_xml': c.responsavel_xml.nome if c.responsavel_xml else None,
+            'tem_xml': c.tem_xml, 'meu': False, 'pode_concluir': False}
+
+
+@_so_get
+def publico_calendario(request):
+    try:
+        ano, mes = map(int, (request.GET.get('mes') or hoje().strftime('%Y-%m')).split('-'))
+        inicio = date(ano, mes, 1)
+    except ValueError:
+        return erro('Mês inválido (use AAAA-MM).')
+    fim = date(ano + mes // 12, mes % 12 + 1, 1)
+    return JsonResponse({
+        'mes': inicio.isoformat()[:7], 'hoje': iso(hoje()),
+        'entregas': [_entrega_publica(e) for e in entregas_qs().filter(data__gte=inicio, data__lt=fim)],
+        'feriados': [{'data': iso(f.data), 'descricao': f.descricao} for f in Feriado.objects.filter(data__gte=inicio, data__lt=fim)],
+    })
+
+
+@_so_get
+def publico_calendario_proximos(request):
+    dias = list(EntregaCalendario.objects.filter(data__gte=hoje()).values_list('data', flat=True).distinct().order_by('data')[:3])
+    return JsonResponse({'hoje': iso(hoje()), 'entregas': [_entrega_publica(e) for e in entregas_qs().filter(data__in=dias)]})

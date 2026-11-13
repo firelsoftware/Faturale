@@ -18,13 +18,19 @@ const inicioAno = () => hoje().slice(0, 5) + '01-01';
 // Aceita "2.327,79", "2327,79" ou "2327.79"
 const lerValor = (t) => { t = String(t).trim(); return t.includes(',') ? Number(t.replace(/\./g, '').replace(',', '.')) : Number(t); };
 const valorBR = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const PERFIS = { faturista: 'Faturista / XML', supervisora: 'Supervisora', coordenadora: 'Coordenadora', diretor: 'Diretor' };
+const PERFIS = { publico: 'Consulta sem login', faturista: 'Faturista / XML', supervisora: 'Supervisora', coordenadora: 'Coordenadora', diretor: 'Diretor' };
 const STATUS = { lancado: 'Lançado', conferido: 'Conferido', devolvido: 'Devolvido' };
 const XML = { enviado: 'XML enviado', pendente: 'XML pendente', na: 'Sem XML' };
 const FUNCOES = { faturamento: 'Fatura', xml: 'XML', ambos: 'Fatura e XML' };
 const cookie = (nome) => document.cookie.split('; ').find((c) => c.startsWith(`${nome}=`))?.split('=')[1];
 
+const ROTAS_PUBLICAS = ['/api/convenios', '/api/pessoas', '/api/calendario/proximos', '/api/calendario'];
 async function api(url, opcoes = {}) {
+  if (estado?.usuario?.publico) {
+    const base = ROTAS_PUBLICAS.find((r) => url === r || url.startsWith(`${r}?`));
+    if (!base) throw new Error('Na consulta sem login só dá para ver Convênios e Calendário.');
+    url = url.replace('/api/', '/api/publico/');
+  }
   const o = { ...opcoes, headers: { ...(opcoes.headers || {}) } };
   if (o.corpo !== undefined) { o.body = JSON.stringify(o.corpo); o.headers['Content-Type'] = 'application/json'; }
   if (o.method && o.method !== 'GET') o.headers['X-CSRFToken'] = cookie('csrftoken') || ''; // proteção do Django
@@ -103,9 +109,10 @@ async function mostrarLogin() {
   $('#form-login').classList.toggle('oculto', !!lista.length);
   const ordem = ['diretor', 'coordenadora', 'supervisora', 'faturista'];
   $('#escolher .pessoas').innerHTML = lista.sort((a, b) => ordem.indexOf(a.perfil) - ordem.indexOf(b.perfil)).map((u) =>
-    `<button data-login="${esc(u.login)}" data-nome="${esc(u.nome)}" data-sem-senha="${u.semSenha !== false}"><span class="avatar">${esc(u.nome[0])}</span><b>${esc(u.nome)}</b><small>${PERFIS[u.perfil]}</small></button>`).join('');
+    `<button data-login="${esc(u.login)}" data-nome="${esc(u.nome)}" data-sem-senha="${u.semSenha !== false}"><span class="avatar">${esc(u.nome[0])}</span><b>${esc(u.nome)}</b><small>${PERFIS[u.perfil]}</small></button>`).join('')
+    + '<button data-publico class="publico"><span class="avatar">👁</span><b>Todos</b><small>Consultar convênios e calendário · sem login</small></button>';
   if (!lista.length) $('#login').focus();
-  $('#escolher > small').textContent = lista[0]?.semSenha === false ? 'Clique no seu nome e digite a senha' : 'Modo demonstração · acesso sem senha';
+  $('#escolher > small').textContent = lista[0]?.semSenha === false ? 'Clique no seu nome e digite a senha · ou em "Todos" para só consultar' : '';
 }
 $('#form-login').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -118,6 +125,11 @@ $('#form-login').addEventListener('submit', async (e) => {
 });
 // Clicar na pessoa: na demonstração entra direto; no sistema de verdade pede a senha.
 $('#escolher').addEventListener('click', async (e) => {
+  if (e.target.closest('[data-publico]')) {
+    // Consulta sem login: só Convênios e Calendário, só leitura
+    estado.usuario = { id: 0, nome: 'Consulta', perfil: 'publico', abas: ['convenios', 'calendario'], publico: true, modoDemo: true };
+    return entrar();
+  }
   const b = e.target.closest('[data-login]');
   if (!b) return;
   $('#erro-login').textContent = '';
@@ -142,7 +154,7 @@ $('#escolher').addEventListener('click', async (e) => {
   });
 });
 $('#sair').addEventListener('click', async () => {
-  await api('/api/sair', { method: 'POST' });
+  if (!estado.usuario?.publico) await api('/api/sair', { method: 'POST' }).catch(() => {});
   estado.usuario = null;
   $('#alertas').innerHTML = '';
   $('#ao-vivo')?.classList.add('oculto');
@@ -192,7 +204,8 @@ async function entrar() {
   $('#tela-app').classList.remove('oculto');
   const u = estado.usuario;
   $('#minha-senha').classList.toggle('oculto', !!u.modoDemo);
-  mostrarBotaoChat(!u.trocarSenha);
+  mostrarBotaoChat(!u.trocarSenha && !u.publico);
+  $('#sair').textContent = u.publico ? 'Entrar' : 'Sair';
   contarNaoLidas();
   if (u.trocarSenha) {
     $('#nome-usuario').textContent = u.nome;
@@ -281,7 +294,7 @@ function montarChat() {
 }
 function mostrarBotaoChat(sim) { montarChat(); $('#chat-botao').classList.toggle('oculto', !sim); if (!sim) fecharChat(); }
 async function contarNaoLidas() {
-  if (!estado.usuario || estado.usuario.trocarSenha) return;
+  if (!estado.usuario || estado.usuario.trocarSenha || estado.usuario.publico) return;
   let r;
   try { r = await api('/api/mensagens/resumo'); } catch { return; }
   const el = $('#chat-botao .chat-conta');
@@ -412,7 +425,7 @@ const ocupado = () => document.querySelector('.fundo-modal')
   || (document.activeElement && document.activeElement.closest('#conteudo') && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName))
   || ($('#revisao') && $('#revisao').innerHTML.trim()) || ($('#x-revisao') && $('#x-revisao').innerHTML.trim());
 async function verificarMudancas() {
-  if (!estado.usuario || estado.usuario.trocarSenha || document.hidden) return;
+  if (!estado.usuario || estado.usuario.trocarSenha || estado.usuario.publico || document.hidden) return;
   contarNaoLidas();
   let r;
   try { r = await api('/api/versao'); } catch { return; }
@@ -431,6 +444,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) veri
 // Aparecem no topo de todas as telas. O × esconde até o dia seguinte (só neste navegador).
 const chaveAlerta = (a, dia) => `alerta:${dia}:${a.titulo}`;
 async function carregarAlertas() {
+  if (estado.usuario?.publico) { $('#alertas').innerHTML = ''; return; }
   let r;
   try { r = await api('/api/alertas'); } catch { return; }
   const escondido = (a) => { try { return sessionStorage.getItem(chaveAlerta(a, r.hoje)) === '1'; } catch { return false; } };
@@ -1042,6 +1056,7 @@ async function telaCalendario() {
   const coord = estado.usuario.abas.includes('gestao'); // supervisão e coordenação montam o calendário
   if (!s.mes) s.mes = hoje().slice(0, 7);
   if (!s.filtro) s.filtro = veTodos() ? 'todos' : 'meus';
+  if (estado.usuario.publico) s.filtro = 'todos';
   const [cal, prox] = await Promise.all([api(`/api/calendario?mes=${s.mes}`), api('/api/calendario/proximos')]);
   const [ano, mes] = s.mes.split('-').map(Number);
 
@@ -1101,7 +1116,7 @@ async function telaCalendario() {
   $('#conteudo').innerHTML = `
     <div class="topo"><div><h1>Calendário de entregas</h1><p>Quais convênios entregar em cada dia. Entregue a fatura ao setor pelo menos 1 dia antes.</p></div>
       <div class="acoes">
-        <div class="alternar"><button data-filtro="meus" class="${s.filtro === 'meus' && !s.pessoa ? 'ativo' : ''}">Meus convênios</button><button data-filtro="todos" class="${s.filtro === 'todos' && !s.pessoa ? 'ativo' : ''}">Todos</button></div>
+        <div class="alternar ${estado.usuario.publico ? 'oculto' : ''}"><button data-filtro="meus" class="${s.filtro === 'meus' && !s.pessoa ? 'ativo' : ''}">Meus convênios</button><button data-filtro="todos" class="${s.filtro === 'todos' && !s.pessoa ? 'ativo' : ''}">Todos</button></div>
         ${veTodos() ? `<select id="cal-pessoa" style="width:auto">${opcoesPessoa(s.pessoa, 'Filtrar por pessoa')}</select>` : ''}
         <button class="btn btn-claro" onclick="print()">Imprimir</button>
       </div></div>
@@ -1241,6 +1256,7 @@ function telaConvenios() {
   const eu = estado.usuario;
   const s = estadoConv;
   const podeEditar = eu.abas.includes('gestao');
+  if (eu.publico) s.sub = 'todos';
   const fatura = estado.convenios.filter((c) => c.ativo && c.faturista_id === eu.id);
   const passaXml = estado.convenios.filter((c) => c.ativo && c.xml_id === eu.id);
   const ninguem = '<span class="apagado">—</span>';
@@ -1283,7 +1299,7 @@ function telaConvenios() {
 
   $('#conteudo').innerHTML = `
     <div class="topo"><div><h1>Convênios</h1><p>As particularidades de cada convênio: pacote, autorização, nº da guia, senha e observações.</p></div></div>
-    <div class="subabas">${[['todos', 'Todos os convênios'], ['meus', 'Meus convênios']].map(([k, v]) => `<button data-sub="${k}" class="${s.sub === k ? 'ativa' : ''}">${v}</button>`).join('')}</div>
+    <div class="subabas ${eu.publico ? 'oculto' : ''}">${[['todos', 'Todos os convênios'], ['meus', 'Meus convênios']].map(([k, v]) => `<button data-sub="${k}" class="${s.sub === k ? 'ativa' : ''}">${v}</button>`).join('')}</div>
     ${corpo}`;
   $('.subabas').addEventListener('click', (e) => { const b2 = e.target.closest('[data-sub]'); if (b2) { s.sub = b2.dataset.sub; telaConvenios(); } });
   $('#cv-busca')?.addEventListener('input', (e) => { s.busca = e.target.value; const pos = e.target.selectionStart; telaConvenios(); const i = $('#cv-busca'); i.focus(); i.setSelectionRange(pos, pos); });

@@ -2,7 +2,7 @@
 // Simula a API do Django dentro do navegador: as telas são as mesmas do sistema.
 // Os dados ficam só neste navegador (localStorage). Nada é enviado a lugar nenhum.
 (() => {
-  const CHAVE = 'faturale-demo-v4';
+  const CHAVE = 'faturale-demo-v5';
   const fetchOriginal = window.fetch.bind(window);
   let db = null;
   const arquivos = {}; // 'lote:ID' / 'xml:ID' -> object URL (só nesta sessão)
@@ -105,7 +105,10 @@
   const fazFat = (u) => u.perfil !== 'faturista' || (u.funcao || 'ambos') !== 'xml';
   const fazXml = (u) => u.perfil !== 'faturista' || (u.funcao || 'ambos') !== 'faturamento';
   const abasDe = (u) => ABAS[u.perfil].filter((a) => (a !== 'faturamento' || fazFat(u)) && (a !== 'xml' || fazXml(u)));
-  const perfilJson = (u) => ({ id: u.id, nome: u.nome, login: u.login, perfil: u.perfil, abas: abasDe(u), funcao: u.funcao || 'ambos', modoDemo: true, regraGuias: 'maior' });
+  const SENHA_INICIAL = '123456';
+  const senhaDe = (u) => (db.senhas ||= {})[u.id] || SENHA_INICIAL;
+  const precisaTrocar = (u) => (db.trocar ||= {})[u.id] !== false;
+  const perfilJson = (u) => ({ id: u.id, nome: u.nome, login: u.login, perfil: u.perfil, abas: abasDe(u), funcao: u.funcao || 'ambos', modoDemo: false, regraGuias: 'menor', trocarSenha: precisaTrocar(u) });
   const convJson = (c) => ({ ...c, faturista: nome(c.faturista_id), responsavel_xml: nome(c.xml_id), aberto_hoje: abertoHoje(c) });
   const divergencia = (l) => {
     const es = db.envios.filter((e) => e.lote_id === l.id && e.valor_protocolo != null).sort((a, b) => a.data_envio.localeCompare(b.data_envio) || a.id - b.id);
@@ -265,22 +268,57 @@
   async function rota(metodo, caminho, q, corpo) {
     const p = caminho.split('/').filter(Boolean).slice(1); // sem "api"
     const [r0, r1, r2] = p;
-    if (r0 === 'entrar' && r1 === 'pessoas') return json(db.usuarios.filter((u) => u.ativo).map((u) => ({ nome: u.nome, login: u.login, perfil: u.perfil })));
-    if (r0 === 'entrar') { const u = db.usuarios.find((x) => x.login === corpo.login && x.ativo); if (!u) return erro('Usuário não encontrado.', 401); db.usuarioAtual = u.id; salvar(); return json(perfilJson(u)); }
+    if (r0 === 'entrar' && r1 === 'pessoas') return json(db.usuarios.filter((u) => u.ativo).map((u) => ({ nome: u.nome, login: u.login, perfil: u.perfil, semSenha: false })));
+    if (r0 === 'entrar') {
+      const u = db.usuarios.find((x) => x.login === corpo.login && x.ativo);
+      if (!u || String(corpo.senha || '') !== senhaDe(u)) return erro('Usuário ou senha inválidos.', 401);
+      db.usuarioAtual = u.id; salvar(); return json(perfilJson(u));
+    }
+    // Consulta sem login ("Todos"): só convênios e calendário, só leitura
+    if (r0 === 'publico') {
+      if (metodo !== 'GET') return erro('Só consulta.', 405);
+      const anon = { id: 0, perfil: 'publico' };
+      const entPub = (e) => ({ ...entregaJson(e, anon), meu: false, pode_concluir: false, concluido_por: null });
+      if (r1 === 'convenios') return json(db.convenios.filter((c) => c.ativo).sort((a, b) => normalizar(a.nome).localeCompare(normalizar(b.nome))).map(convJson));
+      if (r1 === 'pessoas') return json(db.usuarios.filter((x) => x.ativo).map((x) => ({ id: x.id, nome: x.nome, perfil: x.perfil, funcao: x.funcao || 'ambos', fatura: fazFat(x), xml: fazXml(x) })).sort((a, b) => a.nome.localeCompare(b.nome)));
+      if (r1 === 'calendario' && r2 === 'proximos') {
+        const dias = [...new Set(db.entregas.filter((e) => e.data >= hoje()).map((e) => e.data))].sort().slice(0, 3);
+        return json({ hoje: hoje(), entregas: db.entregas.filter((e) => dias.includes(e.data)).map(entPub) });
+      }
+      if (r1 === 'calendario') {
+        const mes = q.get('mes') || hoje().slice(0, 7);
+        return json({ mes, hoje: hoje(), entregas: db.entregas.filter((e) => e.data.startsWith(mes)).sort((a, b) => a.data.localeCompare(b.data) || a.id - b.id).map(entPub),
+          feriados: db.feriados.filter((f) => f.data.startsWith(mes)) });
+      }
+      return erro('Não encontrado.', 404);
+    }
     if (r0 === 'sair') { db.usuarioAtual = null; salvar(); return json({ ok: true }); }
     const u = eu();
     if (!u) return erro('Faça login.', 401);
     const pode = (aba) => ABAS[u.perfil].includes(aba) || abasDe(u).includes(aba);
     if (r0 === 'eu') return json(perfilJson(u));
+    if (r0 === 'senha') {
+      if (String(corpo.atual || '') !== senhaDe(u)) return erro('A senha atual não confere.');
+      const nova = String(corpo.nova || '');
+      if (nova.length < 6) return erro('A senha nova precisa de pelo menos 6 caracteres.');
+      if (nova === senhaDe(u) || nova === SENHA_INICIAL) return erro('Escolha uma senha diferente da atual e da senha inicial.');
+      if (nova !== String(corpo.confirmacao || '')) return erro('A confirmação não é igual à senha nova.');
+      db.senhas[u.id] = nova; db.trocar[u.id] = false; salvar();
+      return json(perfilJson(u));
+    }
+    if (precisaTrocar(u)) return new Response(JSON.stringify({ erro: 'Troque sua senha para continuar.', trocarSenha: true }), { status: 428, headers: { 'content-type': 'application/json' } });
     if (r0 === 'pessoas') return json(db.usuarios.filter((x) => x.ativo).map((x) => ({ id: x.id, nome: x.nome, perfil: x.perfil, funcao: x.funcao || 'ambos', fatura: fazFat(x), xml: fazXml(x) })).sort((a, b) => a.nome.localeCompare(b.nome)));
 
     if (r0 === 'usuarios') {
       if (!pode('gestao')) return erro('Sem acesso.', 403);
-      if (metodo === 'GET') return json([...db.usuarios].sort((a, b) => a.nome.localeCompare(b.nome)));
+      if (metodo === 'GET') return json([...db.usuarios].sort((a, b) => a.nome.localeCompare(b.nome)).map((x) => ({ ...x, trocar_senha: precisaTrocar(x) })));
       if (metodo === 'POST') {
         if (db.usuarios.some((x) => x.login === corpo.login)) return erro('Login já existe.', 409);
         db.usuarios.push({ id: novoId(db.usuarios), nome: corpo.nome, login: String(corpo.login).toLowerCase(), perfil: corpo.perfil, funcao: corpo.funcao || 'ambos', ativo: true, criado_em: hoje() });
-      } else { Object.assign(pessoa(r1), { nome: corpo.nome, perfil: corpo.perfil, funcao: corpo.funcao || 'ambos', ativo: !!corpo.ativo }); }
+      } else {
+        Object.assign(pessoa(r1), { nome: corpo.nome, perfil: corpo.perfil, funcao: corpo.funcao || 'ambos', ativo: !!corpo.ativo });
+        if (corpo.redefinir) { delete (db.senhas ||= {})[Number(r1)]; (db.trocar ||= {})[Number(r1)] = true; } // volta para 123456
+      }
       salvar(); return json({ ok: true });
     }
 
@@ -635,7 +673,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     const faixa = document.createElement('div');
     faixa.className = 'faixa-demo';
-    faixa.innerHTML = 'Demonstração · dados fictícios, salvos só neste navegador <button type="button">Recomeçar do zero</button>';
+    faixa.innerHTML = 'Demonstração · dados fictícios · senha do primeiro acesso: <b>123456</b> <button type="button">Recomeçar do zero</button>';
     faixa.querySelector('button').onclick = () => { try { localStorage.removeItem(CHAVE); } catch {} location.href = location.pathname; };
     document.body.append(faixa);
   });

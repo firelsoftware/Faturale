@@ -489,3 +489,7 @@ main { max-width: 1440px; margin: 0 auto; }
 .seg:first-child { border-left: 0; }
 .seg input { display: none; }
 .seg.ativo { background: var(--azul); color: #fff; }
+
+/* Cartão "Todos" (consulta sem login) na entrada */
+.pessoas button.publico { border-style: dashed; border-color: rgba(76, 141, 255, .55); }
+.pessoas button.publico .avatar { background: rgba(255, 255, 255, .12); }
