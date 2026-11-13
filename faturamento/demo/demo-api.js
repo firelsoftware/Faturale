@@ -2,7 +2,7 @@
 // Simula a API do Django dentro do navegador: as telas são as mesmas do sistema.
 // Os dados ficam só neste navegador (localStorage). Nada é enviado a lugar nenhum.
 (() => {
-  const CHAVE = 'faturale-demo-v5';
+  const CHAVE = 'faturale-demo-v7';
   const fetchOriginal = window.fetch.bind(window);
   let db = null;
   const arquivos = {}; // 'lote:ID' / 'xml:ID' -> object URL (só nesta sessão)
@@ -59,7 +59,7 @@
   const pronto = (async () => {
     try { db = JSON.parse(localStorage.getItem(CHAVE) || 'null'); } catch { db = null; }
     if (!db) {
-      const r = await fetchOriginal('dados.json');
+      const r = await fetchOriginal('dados.json', { cache: 'no-store' });
       db = aproximarDatas(await r.json());
       db.usuarioAtual = null;
       salvar();
@@ -348,7 +348,9 @@
         if (corpo.prazo) { try { definirPrazo(c, corpo.prazo); } catch (e) { return erro(e.message); } }
         if (corpo.particularidades) { const p2 = corpo.particularidades;
           for (const k of ['pacote', 'precisa_autorizacao', 'precisa_guia', 'precisa_senha']) if (k in p2) c[k] = p2[k] === null ? null : !!p2[k];
-          if ('texto' in p2) c.particularidades = String(p2.texto || '').trim().slice(0, 4000); }
+          if ('texto' in p2) c.particularidades = String(p2.texto || '').trim().slice(0, 4000);
+          if ('sem_vencimento' in p2) c.sem_vencimento = !!p2.sem_vencimento;
+          if ('prazo_operadora' in p2) c.prazo_operadora = c.sem_vencimento || !p2.prazo_operadora ? null : Number(p2.prazo_operadora); }
         salvar(); return json(convJson(c));
       }
       if (metodo === 'DELETE') {

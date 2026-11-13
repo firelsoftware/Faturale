@@ -504,3 +504,9 @@ main { max-width: 1440px; margin: 0 auto; }
 .duvida-resposta small { color: #0b6b46; }
 .duvida-responder { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .duvidas-lista { max-height: 45vh; overflow: auto; margin-bottom: 8px; }
+
+.tag.prazo { background: var(--azul-suave); color: var(--navy-700); }
+.prazo-oper { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.prazo-oper input[type=number] { width: 80px; }
+.prazo-oper label { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 500; color: var(--texto); }
+.prazo-oper input[type=checkbox] { width: auto; }

@@ -1246,10 +1246,12 @@ const TAGS = [
   ['precisa_guia', 'Precisa de nº da guia', 'Sem nº da guia'],
   ['precisa_senha', 'Precisa de senha', 'Sem senha'],
 ];
+const prazoOper = (c) => (c.sem_vencimento ? '<span class="tag prazo">Sem vencimento</span>'
+  : c.prazo_operadora ? `<span class="tag prazo" title="Prazo da operadora">Prazo: ${c.prazo_operadora} dias</span>` : '');
 function etiquetas(c) {
-  return TAGS.map(([k, sim, nao]) => (c[k] === true ? `<span class="tag sim">${sim}</span>`
+  return prazoOper(c) + TAGS.map(([k, sim, nao]) => (c[k] === true ? `<span class="tag sim">${sim}</span>`
     : c[k] === false ? `<span class="tag nao">${nao}</span>` : '')).join('')
-    || '<span class="tag vazio">Particularidades não informadas</span>';
+    || (prazoOper(c) ? '' : '<span class="tag vazio">Particularidades não informadas</span>');
 }
 
 function telaConvenios() {
@@ -1391,19 +1393,23 @@ function editarParticularidades(c) {
   modal(`<h2>Particularidades · ${esc(c.nome)}</h2><form class="form-part">
     ${TAGS.map(([k, sim]) => `<div class="linha-part"><span>${sim.replace('Precisa de ', 'Precisa de ').replace('Pacote', 'Trabalha com pacote?')}</span>
       <div class="segmentos">${opcao(k, true, 'Sim')}${opcao(k, false, 'Não')}${opcao(k, null, 'Não sei')}</div></div>`).join('')}
+    <div class="linha-part"><span>Prazo da operadora</span><div class="prazo-oper">
+      <input name="prazo_operadora" type="number" min="1" max="999" value="${c.prazo_operadora ?? ''}" ${c.sem_vencimento ? 'disabled' : ''}> dias
+      <label><input type="checkbox" name="sem_vencimento" ${c.sem_vencimento ? 'checked' : ''}> Sem vencimento</label></div></div>
     <div class="campo" style="margin-top:12px"><label>Observações / particularidades</label>
       <textarea name="texto" rows="5" placeholder="Ex.: guia só com assinatura do paciente; autorização pelo portal X; senha vale 30 dias…">${esc(c.particularidades || '')}</textarea></div>
     <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Cancelar</button><button class="btn btn-primario">Salvar</button></div></form>`,
   (el, fechar) => {
     const form = $('form', el);
     form.addEventListener('change', (e) => {
+      if (e.target.name === 'sem_vencimento') form.prazo_operadora.disabled = e.target.checked;
       const r = e.target.closest('input[type=radio]');
       if (r) $$(`input[name="${r.name}"]`, form).forEach((i) => i.closest('.seg').classList.toggle('ativo', i.checked));
     });
     form.addEventListener('submit', tentar(async (e) => {
       e.preventDefault();
       const v = Object.fromEntries(new FormData(form));
-      const particularidades = { texto: v.texto };
+      const particularidades = { texto: v.texto, sem_vencimento: !!v.sem_vencimento, prazo_operadora: v.sem_vencimento ? '' : (v.prazo_operadora || '') };
       for (const [k] of TAGS) particularidades[k] = v[k] === 'nd' || v[k] === undefined ? null : v[k] === 'true';
       const novo = await api(`/api/convenios/${c.id}`, { method: 'PUT', corpo: { particularidades } });
       estado.convenios = estado.convenios.map((x) => (x.id === c.id ? novo : x));

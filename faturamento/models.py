@@ -91,6 +91,9 @@ class Convenio(models.Model):
     precisa_guia = models.BooleanField('precisa de nº da guia', null=True, blank=True)
     precisa_senha = models.BooleanField('precisa de senha', null=True, blank=True)
     particularidades = models.TextField('observações / particularidades', blank=True)
+    # Prazo da operadora em dias (tabela "Operadora / Prazo"); "S-venc" = sem vencimento
+    prazo_operadora = models.PositiveSmallIntegerField('prazo da operadora (dias)', null=True, blank=True)
+    sem_vencimento = models.BooleanField('sem vencimento', default=False)
 
     class Meta:
         ordering = ['nome']

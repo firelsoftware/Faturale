@@ -254,6 +254,7 @@ def convenio_json(c, feriados=None):
         'aberto_hoje': aberto_hoje(c, feriados),
         'pacote': c.pacote, 'precisa_autorizacao': c.precisa_autorizacao, 'precisa_guia': c.precisa_guia,
         'precisa_senha': c.precisa_senha, 'particularidades': c.particularidades,
+        'prazo_operadora': c.prazo_operadora, 'sem_vencimento': c.sem_vencimento,
         'duvidas_abertas': getattr(c, 'n_duvidas_abertas', None) if hasattr(c, 'n_duvidas_abertas') else c.duvidas.filter(resposta='').count(),
         'duvidas_total': getattr(c, 'n_duvidas', 0),
     }
@@ -308,6 +309,13 @@ def aplicar_convenio(c, d):
                 setattr(c, campo, sim_nao(p[campo]))
         if 'texto' in p:
             c.particularidades = str(p['texto'] or '').strip()[:4000]
+        if 'sem_vencimento' in p:
+            c.sem_vencimento = bool(p['sem_vencimento'])
+        if 'prazo_operadora' in p:
+            v = str(p['prazo_operadora'] or '').strip()
+            if v and (not v.isdigit() or not 1 <= int(v) <= 999):
+                raise ValueError('Prazo em dias: um número de 1 a 999.')
+            c.prazo_operadora = int(v) if v and not c.sem_vencimento else None
 
 
 @api(None, ('GET', 'POST'))

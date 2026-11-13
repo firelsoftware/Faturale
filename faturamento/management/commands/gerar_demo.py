@@ -56,7 +56,8 @@ class Command(BaseCommand):
                            'prazo_inicio': c.prazo_inicio, 'prazo_fim': c.prazo_fim, 'prazo_tipo': c.prazo_tipo,
                            'prazo_dias': c.dias_lista, 'prazo_dia_util': c.prazo_dia_util, 'prazo_hora': c.prazo_hora,
                            'pacote': c.pacote, 'precisa_autorizacao': c.precisa_autorizacao, 'precisa_guia': c.precisa_guia,
-                           'precisa_senha': c.precisa_senha, 'particularidades': c.particularidades} for c in Convenio.objects.all()],
+                           'precisa_senha': c.precisa_senha, 'particularidades': c.particularidades,
+                           'prazo_operadora': c.prazo_operadora, 'sem_vencimento': c.sem_vencimento} for c in Convenio.objects.all()],
             'lotes': [{'id': l.id, 'numero_lote': l.numero_lote, 'convenio_id': l.convenio_id, 'faturista_id': l.faturista_id,
                        'lancado_por_id': l.lancado_por_id, 'gerado_por': l.gerado_por, 'qtd_guias': l.qtd_guias,
                        'guias_texto': l.guias_texto, 'valor_total': float(l.valor_total), 'competencia': l.competencia,
@@ -73,8 +74,14 @@ class Command(BaseCommand):
             'feriados': [{'data': iso(f.data), 'descricao': f.descricao} for f in Feriado.objects.all()],
         }
         if not dados['lotes'] and (destino / 'dados.json').exists():
-            # Banco de verdade sem dados fictícios: atualiza só as telas e mantém os dados da demonstração
-            self.stdout.write(self.style.WARNING('Sem lotes de demonstração no banco: mantive o docs/dados.json atual.'))
+            # Banco de verdade sem dados fictícios: mantém os lotes da demonstração e só atualiza os
+            # convênios (particularidades, prazos, convênios novos), sem perder os que os lotes usam.
+            antigo = json.loads((destino / 'dados.json').read_text(encoding='utf-8'))
+            novos = {c['id']: c for c in dados['convenios']}
+            convs = [novos.pop(c['id'], c) for c in antigo['convenios']] + list(novos.values())
+            antigo['convenios'] = convs
+            (destino / 'dados.json').write_text(json.dumps(antigo, ensure_ascii=False), encoding='utf-8')
+            self.stdout.write(self.style.WARNING(f'Sem lotes de demonstração no banco: mantive os lotes e atualizei {len(convs)} convênios.'))
             return
         (destino / 'dados.json').write_text(json.dumps(dados, ensure_ascii=False), encoding='utf-8')
         self.stdout.write(self.style.SUCCESS(

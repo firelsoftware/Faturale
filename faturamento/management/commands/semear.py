@@ -151,6 +151,12 @@ class Command(BaseCommand):
                         c.save()
             for nome, (texto, _, _) in PORTAIS.items():
                 aplicar_prazo(convenio(nome), texto)
+            # Prazo da operadora (tabela "Operadora / Prazo")
+            from importlib import import_module
+            for _, nome, dias in import_module('faturamento.migrations.0010_prazo_operadora').TABELA:
+                c = convenio(nome)
+                c.prazo_operadora, c.sem_vencimento = dias, dias is None
+                c.save()
             # Dados fictícios só com --demo (o sistema de verdade começa sem lotes)
             if opts.get('demo'):
                 convenio('Unimed').tem_xml = False  # exemplo de convênio sem XML
