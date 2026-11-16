@@ -1469,3 +1469,34 @@ def publico_duvidas(request):
     if request.method != 'GET' or not request.GET.get('convenio'):
         return erro('Informe o convênio.')
     return JsonResponse([duvida_json(d) for d in _duvidas_qs().filter(convenio_id=request.GET['convenio'])[:200]], safe=False)
+
+
+# ---------- Relatórios: produção de cada pessoa (inclusive quem ainda não produziu) ----------
+@api('gestao')
+def producao_equipe(request):
+    inicio, fim = para_data(request.GET.get('inicio')), para_data(request.GET.get('fim'))
+    lotes = Lote.objects.all()
+    envios = EnvioXml.objects.select_related('lote')
+    if inicio:
+        lotes, envios = lotes.filter(data_lancamento__gte=inicio), envios.filter(data_envio__gte=inicio)
+    if fim:
+        lotes, envios = lotes.filter(data_lancamento__lte=fim), envios.filter(data_envio__lte=fim)
+    fat = {r['faturista_id']: r for r in lotes.values('faturista_id').annotate(lotes=Count('id'), guias=Sum('qtd_guias'), valor=Sum('valor_total'))}
+    xml = {}
+    for e in envios:
+        x = xml.setdefault(e.responsavel_id, {'lotes': 0, 'guias': 0, 'valor': 0.0})
+        x['lotes'] += 1
+        x['guias'] += e.lote.qtd_guias if e.lote else 0
+        x['valor'] += float(e.lote.valor_total) if e.lote else float(e.valor_protocolo or 0)
+    linhas = []
+    for u in Usuario.objects.filter(is_active=True).order_by('first_name'):
+        f, x = fat.get(u.id), xml.get(u.id)
+        if u.perfil != 'faturista' and not f and not x:
+            continue  # gestão só aparece se tiver produção
+        linhas.append({
+            'id': u.id, 'nome': u.nome, 'funcao': u.funcao if u.perfil == 'faturista' else None,
+            'fatura': {'lotes': f['lotes'], 'guias': f['guias'] or 0, 'valor': round(float(f['valor'] or 0), 2)} if f else {'lotes': 0, 'guias': 0, 'valor': 0},
+            'xml': {'lotes': x['lotes'], 'guias': x['guias'], 'valor': round(x['valor'], 2)} if x else {'lotes': 0, 'guias': 0, 'valor': 0},
+        })
+    linhas.sort(key=lambda r: -(r['fatura']['valor'] + r['xml']['valor']))
+    return JsonResponse(linhas, safe=False)

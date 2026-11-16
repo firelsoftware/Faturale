@@ -1700,6 +1700,8 @@ async function telaCoordenacao() {
       </div>
     </div>
     <div class="kpis" id="c-kpis"></div>
+    <div class="cartao"><h2>Produção por pessoa <small class="apagado">no período escolhido · só coordenação, supervisão e diretoria veem</small></h2>
+      <div id="c-equipe"></div></div>
     <div class="cartao"><h2>Produção por faturista
       <span class="acoes">${['dia', 'mes', 'ano'].map((p) => `<button class="btn btn-mini ${f.producao === p ? 'btn-primario' : 'btn-claro'}" data-producao="${p}">${ROTULOS_POR[p]}</button>`).join('')}</span></h2>
       <div id="c-producao"></div></div>
@@ -1710,10 +1712,23 @@ async function telaCoordenacao() {
 
   const params = () => ({ inicio: f.inicio, fim: f.fim, competencia: f.competencia, convenio: f.convenio, faturista: f.faturista });
   const carregar = tentar(async () => {
-    const [rel, prod] = await Promise.all([
+    const [rel, prod, equipe] = await Promise.all([
       api(`/api/relatorios?${qs({ ...params(), por: f.por })}`),
       api(`/api/relatorios/producao?${qs({ ...params(), por: f.producao })}`),
+      api(`/api/relatorios/equipe?${qs({ inicio: f.inicio, fim: f.fim })}`),
     ]);
+    // Produção de cada pessoa da equipe (quem ainda não produziu aparece zerado)
+    const zero = (v) => (v ? '' : ' class="zero"');
+    const tot = equipe.reduce((a, r) => ({ fl: a.fl + r.fatura.lotes, fg: a.fg + r.fatura.guias, fv: a.fv + r.fatura.valor,
+      xl: a.xl + r.xml.lotes, xg: a.xg + r.xml.guias, xv: a.xv + r.xml.valor }), { fl: 0, fg: 0, fv: 0, xl: 0, xg: 0, xv: 0 });
+    $('#c-equipe').innerHTML = !equipe.length ? '<div class="vazio">Ninguém na equipe.</div>' : `<div class="tabela-caixa"><table class="tabela-equipe">
+      <thead><tr><th>Pessoa</th><th>Função</th><th class="num">Fatura · lotes</th><th class="num">Fatura · guias</th><th class="num">Fatura · valor</th>
+        <th class="num">XML · lotes</th><th class="num">XML · guias</th><th class="num">XML · valor</th></tr></thead>
+      <tbody>${equipe.map((r) => `<tr${zero(r.fatura.lotes + r.xml.lotes)}><td><b>${esc(r.nome)}</b></td><td>${r.funcao ? FUNCOES[r.funcao] : '—'}</td>
+        <td class="num">${num(r.fatura.lotes)}</td><td class="num">${num(r.fatura.guias)}</td><td class="num">${moeda(r.fatura.valor)}</td>
+        <td class="num">${num(r.xml.lotes)}</td><td class="num">${num(r.xml.guias)}</td><td class="num">${moeda(r.xml.valor)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>Total</td><td></td><td class="num">${num(tot.fl)}</td><td class="num">${num(tot.fg)}</td><td class="num">${moeda(tot.fv)}</td>
+        <td class="num">${num(tot.xl)}</td><td class="num">${num(tot.xg)}</td><td class="num">${moeda(tot.xv)}</td></tr></tfoot></table></div>`;
     const t = rel.totais;
     $('#c-kpis').innerHTML = `
       <div class="kpi destaque"><span>Valor faturado</span><b>${moeda(t.valor)}</b><small>no filtro atual</small></div>

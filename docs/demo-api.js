@@ -2,7 +2,7 @@
 // Simula a API do Django dentro do navegador: as telas são as mesmas do sistema.
 // Os dados ficam só neste navegador (localStorage). Nada é enviado a lugar nenhum.
 (() => {
-  const CHAVE = 'faturale-demo-v8';
+  const CHAVE = 'faturale-demo-v9';
   const fetchOriginal = window.fetch.bind(window);
   let db = null;
   const arquivos = {}; // 'lote:ID' / 'xml:ID' -> object URL (só nesta sessão)
@@ -669,6 +669,21 @@
 
     if (r0 === 'relatorios') {
       const ls = filtroLotes(q, u);
+      if (r1 === 'equipe') {
+        if (!pode('gestao')) return erro('Sem acesso.', 403);
+        const ini = q.get('inicio') || ''; const fim = q.get('fim') || '9999';
+        const dentro = (dd) => (!ini || dd >= ini) && dd <= fim;
+        const linhas = db.usuarios.filter((x) => x.ativo).map((x) => {
+          const ls = db.lotes.filter((l) => l.faturista_id === x.id && dentro(l.data_lancamento));
+          const es = db.envios.filter((e) => e.responsavel_id === x.id && dentro(e.data_envio));
+          const lt = (e) => db.lotes.find((l) => l.id === e.lote_id);
+          return { id: x.id, nome: x.nome, funcao: x.perfil === 'faturista' ? (x.funcao || 'ambos') : null, perfil: x.perfil,
+            fatura: { lotes: ls.length, guias: ls.reduce((s2, l) => s2 + l.qtd_guias, 0), valor: Math.round(ls.reduce((s2, l) => s2 + l.valor_total, 0) * 100) / 100 },
+            xml: { lotes: es.length, guias: es.reduce((s2, e) => s2 + (lt(e)?.qtd_guias || 0), 0), valor: Math.round(es.reduce((s2, e) => s2 + (lt(e)?.valor_total ?? e.valor_protocolo ?? 0), 0) * 100) / 100 } };
+        }).filter((r) => r.perfil === 'faturista' || r.fatura.lotes || r.xml.lotes)
+          .sort((a2, b2) => (b2.fatura.valor + b2.xml.valor) - (a2.fatura.valor + a2.xml.valor));
+        return json(linhas);
+      }
       if (r1 === 'producao') {
         if (!pode('gestao')) return erro('Sem acesso.', 403);
         const por = q.get('por') || 'dia';

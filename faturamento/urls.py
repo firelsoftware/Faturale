@@ -47,6 +47,7 @@ urlpatterns = [
     path('api/minha-producao', v.minha_producao),
     path('api/relatorios', v.relatorios),
     path('api/relatorios/producao', v.producao),
+    path('api/relatorios/equipe', v.producao_equipe),
     path('api/relatorios/csv', v.relatorio_csv),
     path('api/diretoria/painel', v.painel),
 ]

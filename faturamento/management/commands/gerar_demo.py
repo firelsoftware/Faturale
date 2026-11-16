@@ -80,6 +80,9 @@ class Command(BaseCommand):
             novos = {c['id']: c for c in dados['convenios']}
             convs = [novos.pop(c['id'], c) for c in antigo['convenios']] + list(novos.values())
             antigo['convenios'] = convs
+            # Pessoas: atualiza nomes/funções e acrescenta quem foi cadastrado depois
+            novas_p = {u['id']: u for u in dados['usuarios']}
+            antigo['usuarios'] = [novas_p.pop(u['id'], u) for u in antigo['usuarios']] + list(novas_p.values())
             (destino / 'dados.json').write_text(json.dumps(antigo, ensure_ascii=False), encoding='utf-8')
             self.stdout.write(self.style.WARNING(f'Sem lotes de demonstração no banco: mantive os lotes e atualizei {len(convs)} convênios.'))
             return
