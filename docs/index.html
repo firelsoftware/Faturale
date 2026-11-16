@@ -7,7 +7,7 @@
   <link rel="icon" href="logo-f.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=1794869959">
+  <link rel="stylesheet" href="styles.css?v=1794870130">
 </head>
 <body>
   <section id="tela-login" class="login oculto">
@@ -29,12 +29,10 @@
           <div class="campo"><label>Nome completo</label><input name="nome" required maxlength="80" autocomplete="name"></div>
           <div class="campo"><label>Usuário (para entrar)</label><input name="login" required pattern="[a-z0-9._\-]{3,30}" placeholder="ex.: maria.silva" autocomplete="username"></div>
           <div class="campo"><label>E-mail</label><input name="email" type="email" maxlength="120" autocomplete="email"></div>
-          <div class="campo"><label>O que você vai fazer</label><select name="funcao">
-            <option value="faturamento">Fatura</option><option value="xml">XML</option><option value="ambos" selected>Fatura e XML</option></select></div>
           <div class="campo"><label>Senha (mínimo 6)</label><input name="senha" type="password" minlength="6" required autocomplete="new-password"></div>
           <div class="campo"><label>Repita a senha</label><input name="confirmacao" type="password" minlength="6" required autocomplete="new-password"></div>
           <button class="btn btn-primario" style="width:100%;justify-content:center">Enviar cadastro</button>
-          <p class="entrada-nota">A coordenação ou a supervisão libera o seu acesso e define o que você pode ver.</p>
+          <p class="entrada-nota">Você entra na Fatura. A coordenação ou a supervisão libera o seu acesso e, se precisar, muda a sua função.</p>
         </form>
         <p class="ok-login oculto" id="ok-cadastro"></p>
       </div>
@@ -56,7 +54,7 @@
   </section>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="demo-api.js?v=1794869959"></script>
-  <script type="module" src="app.js?v=1794869959"></script>
+  <script src="demo-api.js?v=1794870130"></script>
+  <script type="module" src="app.js?v=1794870130"></script>
 </body>
 </html>

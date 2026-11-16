@@ -1508,7 +1508,7 @@ async function gestaoUsuarios() {
   $('#sub').innerHTML = `${pendentes.length ? `<div class="cartao cadastros-pendentes">
     <h2>Cadastros aguardando liberação <span class="chat-conta">${pendentes.length}</span></h2>
     ${pendentes.map((u) => `<div class="pendente" data-id="${u.id}">
-      <div><b>${esc(u.nome)}</b><small>usuário <b>${esc(u.login)}</b>${u.email ? ` · ${esc(u.email)}` : ''} · pediu: ${FUNCOES[u.funcao]} · ${dataBR(u.criado_em.slice(0, 10))}</small></div>
+      <div><b>${esc(u.nome)}</b><small>usuário <b>${esc(u.login)}</b>${u.email ? ` · ${esc(u.email)}` : ''} · ${dataBR(u.criado_em.slice(0, 10))}</small></div>
       <label>Perfil <select data-perfil>${perfis.map((pf) => `<option value="${pf}">${PERFIS[pf]}</option>`).join('')}</select></label>
       <label>Função <select data-funcao>${Object.entries(FUNCOES).map(([k, v]) => `<option value="${k}" ${u.funcao === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <div class="acoes"><button class="btn btn-perigo btn-mini" data-recusar>Recusar</button><button class="btn btn-primario btn-mini" data-liberar>Liberar acesso</button></div>
@@ -1540,7 +1540,7 @@ async function gestaoUsuarios() {
       <div class="campo"><label>Nome</label><input name="nome" value="${esc(u.nome)}" required></div>
       <div class="campo"><label>Login</label><input name="login" value="${esc(u.login)}" ${u.id ? 'disabled' : 'required'}></div>
       <div class="campo"><label>Perfil</label><select name="perfil">${perfis.map((p) => `<option value="${p}" ${u.perfil === p ? 'selected' : ''}>${PERFIS[p]}</option>`).join('')}</select></div>
-      <div class="campo"><label>Função (equipe)</label><select name="funcao">${Object.entries(FUNCOES).map(([k, v]) => `<option value="${k}" ${(u.funcao || 'ambos') === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+      <div class="campo"><label>Função (equipe)</label><select name="funcao">${Object.entries(FUNCOES).map(([k, v]) => `<option value="${k}" ${(u.funcao || 'faturamento') === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
 
     </div>
     ${u.id ? `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="ativo" style="width:auto" ${u.ativo ? 'checked' : ''}> Usuário ativo</label>

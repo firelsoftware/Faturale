@@ -293,7 +293,7 @@
       if (senhaC !== String(corpo.confirmacao || '')) return erro('A confirmação não é igual à senha.');
       if (db.usuarios.some((x) => x.login === loginC)) return erro('Esse usuário já existe. Escolha outro.', 409);
       const novo = { id: novoId(db.usuarios), nome: nomeC, login: loginC, email: String(corpo.email || ''), perfil: 'faturista',
-        funcao: ['faturamento', 'xml', 'ambos'].includes(corpo.funcao) ? corpo.funcao : 'ambos', ativo: false, aguardando: true, criado_em: hoje() };
+        funcao: 'faturamento', ativo: false, aguardando: true, criado_em: hoje() };
       db.usuarios.push(novo); (db.senhas ||= {})[novo.id] = senhaC; (db.trocar ||= {})[novo.id] = false; salvar();
       return json({ ok: true });
     }

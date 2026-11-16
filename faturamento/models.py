@@ -16,7 +16,7 @@ class Usuario(AbstractUser):
         XML = 'xml', 'Envio de XML'
         AMBOS = 'ambos', 'Faturamento e XML'
 
-    funcao = models.CharField('função', max_length=12, choices=Funcao.choices, default=Funcao.AMBOS)
+    funcao = models.CharField('função', max_length=12, choices=Funcao.choices, default=Funcao.FATURAMENTO)
 
     # Senha inicial (ou redefinida pela gestão): obriga a trocar no próximo acesso
     trocar_senha = models.BooleanField('trocar a senha no próximo acesso', default=True)

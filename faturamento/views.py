@@ -163,8 +163,8 @@ def cadastrar(request):
         return erro('A confirmação não é igual à senha.')
     if Usuario.objects.filter(username=login_).exists():
         return erro('Esse usuário já existe. Escolha outro.', 409)
-    funcao = d.get('funcao') if d.get('funcao') in ('faturamento', 'xml', 'ambos') else 'ambos'
-    u = Usuario(username=login_, first_name=nome, email=email, perfil='faturista', funcao=funcao,
+    # Todo mundo entra em Fatura; a coordenação/supervisão muda a função se quiser
+    u = Usuario(username=login_, first_name=nome, email=email, perfil='faturista', funcao='faturamento',
                 is_active=False, aguardando_liberacao=True, trocar_senha=False)
     u.set_password(senha)
     u.save()
@@ -233,7 +233,7 @@ def usuarios(request):
         return erro('Preencha nome e login (letras minúsculas, números, ponto).')
     if Usuario.objects.filter(username=login_).exists():
         return erro('Login já existe.', 409)
-    funcao = d.get('funcao') if d.get('funcao') in ('faturamento', 'xml', 'ambos') else 'ambos'
+    funcao = d.get('funcao') if d.get('funcao') in ('faturamento', 'xml', 'ambos') else 'faturamento'
     u = Usuario(username=login_, first_name=nome, perfil=d['perfil'], trocar_senha=True, funcao=funcao)
     u.set_password(settings.FATURALE_SENHA_INICIAL)  # a pessoa troca no primeiro acesso
     u.save()
