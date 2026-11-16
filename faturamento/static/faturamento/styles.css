@@ -547,3 +547,9 @@ main { max-width: 1440px; margin: 0 auto; }
 /* Relatórios: produção por pessoa (quem ainda não produziu fica mais apagado) */
 .tabela-equipe tr.zero td { color: var(--texto-2); }
 .tabela-equipe tr.zero td b { font-weight: 500; }
+
+/* Quadro "Lançar produção" */
+.lancar-cartao { border-color: #c9dbff; }
+form.lancar { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 12px; align-items: end; }
+form.lancar .campo { margin: 0; }
+form.lancar button { width: 100%; padding: 10px; }

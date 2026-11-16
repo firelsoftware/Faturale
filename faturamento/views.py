@@ -853,7 +853,7 @@ def envios_xml(request):
         responsavel_id=d.get('responsavelId') if u.ve_todos and d.get('responsavelId') else u.id,
         protocolo=str(d.get('protocolo') or '').strip(), data_envio=data_envio,
         observacao=d.get('observacao') or '', nome_arquivo=str(d.get('nomeArquivo') or '')[:200],
-        valor_protocolo=valor_protocolo)
+        valor_protocolo=valor_protocolo, qtd_guias=int(d['qtdGuias']) if str(d.get('qtdGuias') or '').isdigit() else None)
     if caminho := pegar_pendente(d.get('arquivoId')):
         anexar(e.arquivo, f'xml-{e.id}{caminho.suffix}', caminho)
     diverge = bool(lote_ and valor_protocolo is not None and abs(valor_protocolo - lote_.valor_total) >= Decimal('0.01'))
@@ -1302,7 +1302,7 @@ def minha_producao(request):
     lotes = list(lotes_qs.order_by('-data_lancamento', '-id'))
     envios = list(envios_qs.order_by('-data_envio', '-id'))
     valor_envio = lambda e: float(e.lote.valor_total) if e.lote else float(e.valor_protocolo or 0)
-    guias_envio = lambda e: e.lote.qtd_guias if e.lote else 0
+    guias_envio = lambda e: e.lote.qtd_guias if e.lote else (e.qtd_guias or 0)
 
     # Gráfico: por dia até ~2 meses; acima disso, por mês
     primeiro = inicio or min([l.data_lancamento for l in lotes] + [e.data_envio for e in envios] + [fim])
@@ -1486,7 +1486,7 @@ def producao_equipe(request):
     for e in envios:
         x = xml.setdefault(e.responsavel_id, {'lotes': 0, 'guias': 0, 'valor': 0.0})
         x['lotes'] += 1
-        x['guias'] += e.lote.qtd_guias if e.lote else 0
+        x['guias'] += e.lote.qtd_guias if e.lote else (e.qtd_guias or 0)
         x['valor'] += float(e.lote.valor_total) if e.lote else float(e.valor_protocolo or 0)
     linhas = []
     for u in Usuario.objects.filter(is_active=True).order_by('first_name'):

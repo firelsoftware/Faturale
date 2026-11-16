@@ -488,7 +488,7 @@
         lote ||= db.lotes.find((l) => l.numero_lote === numero && l.convenio_id === c.id) || null;
         const e = { id: novoId(db.envios), numero_lote: numero, convenio_id: c.id, lote_id: lote?.id || null, responsavel_id: veTodos(u) && corpo.responsavelId ? Number(corpo.responsavelId) : u.id,
           protocolo: corpo.protocolo || '', data_envio: corpo.dataEnvio, nome_arquivo: corpo.nomeArquivo || '', observacao: corpo.observacao || '', demo: false,
-          valor_protocolo: lerValor(corpo.valorProtocolo) };
+          valor_protocolo: lerValor(corpo.valorProtocolo), qtd_guias: Number(corpo.qtdGuias) || null };
         db.envios.push(e); anexar(`xml:${e.id}`, corpo.arquivoId); salvar();
         const diverge = !!(lote && e.valor_protocolo != null && Math.abs(e.valor_protocolo - lote.valor_total) >= 0.01);
         return json({ id: e.id, amarrado: !!lote, numeroLote: numero, divergente: diverge, faturista: diverge ? nome(lote.faturista_id) : null });
@@ -526,7 +526,7 @@
       const envios = db.envios.filter((e) => e.responsavel_id === u.id && dentro(e.data_envio)).sort((a2, b2) => b2.data_envio.localeCompare(a2.data_envio) || b2.id - a2.id);
       const loteDe = (e) => db.lotes.find((l) => l.id === e.lote_id);
       const vEnv = (e) => loteDe(e)?.valor_total ?? e.valor_protocolo ?? 0;
-      const gEnv = (e) => loteDe(e)?.qtd_guias ?? 0;
+      const gEnv = (e) => loteDe(e)?.qtd_guias ?? e.qtd_guias ?? 0;
       const r2 = (v) => Math.round(v * 100) / 100;
       const primeiro = ini || [...lotes.map((l) => l.data_lancamento), ...envios.map((e) => e.data_envio), fim].sort()[0];
       const porMes = (new Date(`${fim}T12:00:00`) - new Date(`${primeiro}T12:00:00`)) / 864e5 > 62;
@@ -679,7 +679,7 @@
           const lt = (e) => db.lotes.find((l) => l.id === e.lote_id);
           return { id: x.id, nome: x.nome, funcao: x.perfil === 'faturista' ? (x.funcao || 'ambos') : null, perfil: x.perfil,
             fatura: { lotes: ls.length, guias: ls.reduce((s2, l) => s2 + l.qtd_guias, 0), valor: Math.round(ls.reduce((s2, l) => s2 + l.valor_total, 0) * 100) / 100 },
-            xml: { lotes: es.length, guias: es.reduce((s2, e) => s2 + (lt(e)?.qtd_guias || 0), 0), valor: Math.round(es.reduce((s2, e) => s2 + (lt(e)?.valor_total ?? e.valor_protocolo ?? 0), 0) * 100) / 100 } };
+            xml: { lotes: es.length, guias: es.reduce((s2, e) => s2 + (lt(e)?.qtd_guias || e.qtd_guias || 0), 0), valor: Math.round(es.reduce((s2, e) => s2 + (lt(e)?.valor_total ?? e.valor_protocolo ?? 0), 0) * 100) / 100 } };
         }).filter((r) => r.perfil === 'faturista' || r.fatura.lotes || r.xml.lotes)
           .sort((a2, b2) => (b2.fatura.valor + b2.xml.valor) - (a2.fatura.valor + a2.xml.valor));
         return json(linhas);

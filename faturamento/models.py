@@ -181,6 +181,8 @@ class EnvioXml(models.Model):
     nome_arquivo = models.CharField(max_length=200, blank=True)
     # Valor que está no protocolo do convênio. Se for diferente do valor do lote, o faturista é avisado.
     valor_protocolo = models.DecimalField('valor no protocolo do convênio', max_digits=14, decimal_places=2, null=True, blank=True)
+    # Guias digitadas no lançamento à mão (quando o lote ainda não está na Fatura)
+    qtd_guias = models.PositiveIntegerField('guias', null=True, blank=True)
     observacao = models.TextField(blank=True)
     demo = models.BooleanField(default=False)
     criado_em = models.DateTimeField(auto_now_add=True)

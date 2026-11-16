@@ -622,12 +622,55 @@ function ligarLancarDoProtocolo(d, caixa, redesenhar, paraQuemAnexou = false) {
   }));
 }
 
+// ---------- Quadro "Lançar produção" (sem arquivo) ----------
+// A pessoa digita nº do lote, convênio, guias e valor. Na Fatura vira um lote da produção dela;
+// no XML, um envio de XML na produção dela.
+function cartaoLancar(tipo) {
+  const campo = tipo === 'xml' ? 'xml_id' : 'faturista_id';
+  const meus = estado.convenios.filter((c) => c.ativo && c[campo] === estado.usuario.id && (tipo !== 'xml' || c.tem_xml));
+  const outros = estado.convenios.filter((c) => c.ativo && !meus.includes(c) && (tipo !== 'xml' || c.tem_xml));
+  const opc = (l) => l.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
+  const mes = hoje().slice(0, 7);
+  return `<div class="cartao lancar-cartao">
+    <h2>Lançar produção <small class="apagado">digite os dados do lote · conta na sua produção de ${tipo === 'xml' ? 'XML' : 'fatura'}</small></h2>
+    <form class="lancar" data-tipo="${tipo}">
+      <div class="campo"><label>Nº do lote</label><input name="numeroLote" required inputmode="numeric" placeholder="ex.: 365118"></div>
+      <div class="campo"><label>Convênio</label><select name="convenioId" required><option value="">Escolha…</option>
+        ${meus.length ? `<optgroup label="Meus convênios">${opc(meus)}</optgroup><optgroup label="Todos">${opc(outros)}</optgroup>` : opc(outros)}</select></div>
+      <div class="campo"><label>Quantidade de guias</label><input name="qtdGuias" type="number" min="1" required></div>
+      <div class="campo"><label>Valor (R$)</label><input name="valor" inputmode="decimal" required placeholder="0,00"></div>
+      ${tipo === 'xml' ? '' : `<div class="campo"><label>Competência</label><input name="competencia" type="month" value="${mes}" required></div>`}
+      <div class="campo"><label>Data</label><input name="data" type="date" value="${hoje()}" required></div>
+      <div class="campo"><label>&nbsp;</label><button class="btn btn-primario" style="justify-content:center">Lançar</button></div>
+    </form></div>`;
+}
+function ligarLancar(depois) {
+  const form = $('form.lancar');
+  if (!form) return;
+  form.addEventListener('submit', tentar(async (e) => {
+    e.preventDefault();
+    const v = Object.fromEntries(new FormData(form));
+    const valor = lerValor(v.valor);
+    if (Number.isNaN(valor) || valor < 0) throw new Error('Valor inválido.');
+    if (form.dataset.tipo === 'xml') {
+      const r = await api('/api/xml', { method: 'POST', corpo: { numeroLote: v.numeroLote.trim(), convenioId: v.convenioId, qtdGuias: v.qtdGuias, valorProtocolo: valor, dataEnvio: v.data } });
+      avisar(`Lote ${r.numeroLote} lançado na sua produção de XML.${r.amarrado ? ' Já está ligado ao lote da Fatura.' : ''}`);
+    } else {
+      const r = await api('/api/lotes', { method: 'POST', corpo: { numeroLote: v.numeroLote.trim(), convenioId: v.convenioId, qtdGuias: Number(v.qtdGuias),
+        valorTotal: valor, competencia: v.competencia, dataLancamento: v.data, faturistaId: estado.usuario.id } });
+      avisar(`Lote ${v.numeroLote} lançado na sua produção.${r.xmlAmarrados ? ' Ligado ao XML já registrado.' : ''}`);
+    }
+    depois();
+  }));
+}
+
 // ---------- Aba: Faturamento ----------
 async function telaFaturamento() {
   const eu = estado.usuario;
   const meu = veTodos() ? { faturista: eu.id } : {};
   $('#conteudo').innerHTML = `
     <div class="topo"><div><h1>Fatura</h1><p>Olá, ${esc(eu.nome)}. Jogue o arquivo do lote (o PDF do protocolo do lote) e confira os dados antes de salvar. Sua produção fica em <a href="#minha" data-ir-aba="minha">Minha produção</a>.</p></div></div>
+    ${cartaoLancar('fatura')}
     <div class="cartao">
       <h2>Arquivo do lote · Fatura</h2>
       <label class="solta" id="solta">
@@ -660,6 +703,7 @@ async function telaFaturamento() {
     </div>
     ${cartaoConvenios('Convênios que eu faturo', meusConvenios('faturista_id'))}`;
 
+  ligarLancar(telaFaturamento);
   let lotes = [];
   const carregar = tentar(async () => {
     lotes = await api(`/api/lotes?${qs({ ...meu, meus: 1, competencia: $('#f-comp').value, convenio: $('#f-conv').value, status: $('#f-status').value, busca: $('#f-busca').value })}`);
@@ -791,6 +835,7 @@ async function telaXml() {
   $('#conteudo').innerHTML = `
     <div class="topo"><div><h1>XML</h1><p>Depois de passar o XML no portal do convênio, jogue aqui o mesmo arquivo do lote (o PDF do protocolo do lote). Conta na sua produção de XML.</p></div>
       ${todos ? `<div class="campo" style="margin:0;min-width:220px"><label>Responsável pelo XML</label><select id="x-resp">${opcoesPessoa(f.responsavel, 'Toda a equipe')}</select></div>` : ''}</div>
+    ${cartaoLancar('xml')}
     <div class="cartao">
       <h2>Arquivo do lote · XML</h2>
       <label class="solta" id="x-solta">
@@ -819,6 +864,7 @@ async function telaXml() {
     </div>
     ${todos ? '' : cartaoConvenios('Convênios em que passo o XML', meusConvenios('xml_id'))}`;
 
+  ligarLancar(telaXml);
   let pendentes = [];
   let envios = [];
   const carregarPendentes = tentar(async () => {
