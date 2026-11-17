@@ -27,7 +27,7 @@ class Command(BaseCommand):
         destino = Path(settings.BASE_DIR) / 'docs'
         destino.mkdir(exist_ok=True)
         estaticos = APP / 'static' / 'faturamento'
-        for nome in ('app.js', 'styles.css', 'logo-f.png'):
+        for nome in ('app.js', 'pm.js', 'styles.css', 'logo-f.png'):
             shutil.copy2(estaticos / nome, destino / nome)
         shutil.copy2(APP / 'demo' / 'demo-api.js', destino / 'demo-api.js')
 

@@ -18,12 +18,28 @@
   const erro = (m, s = 400) => json({ erro: m }, s);
   const novoId = (lista) => Math.max(0, ...lista.map((x) => x.id)) + 1;
   const ABAS = {
-    faturista: ['faturamento', 'xml', 'minha', 'calendario', 'convenios'],
-    supervisora: ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'gestao', 'producao'],
-    coordenadora: ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'gestao', 'producao', 'coordenacao'],
-    diretor: ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'gestao', 'producao', 'coordenacao', 'diretoria'],
+    faturista: ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm'],
+    supervisora: ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao'],
+    coordenadora: ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao', 'coordenacao'],
+    diretor: ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao', 'coordenacao', 'diretoria'],
   };
-  const salvar = () => { try { localStorage.setItem(CHAVE, JSON.stringify(db)); } catch {} };
+  const CHAVE_CONTAS = 'faturale-contas'; // senhas e cadastros: sobrevivem a atualizações e ao "recomeçar"
+  const salvar = () => {
+    try {
+      localStorage.setItem(CHAVE, JSON.stringify(db));
+      const fixos = new Set((db.usuariosOriginais || []));
+      localStorage.setItem(CHAVE_CONTAS, JSON.stringify({ senhas: db.senhas || {}, trocar: db.trocar || {},
+        novos: db.usuarios.filter((u) => !fixos.has(u.id)) }));
+    } catch {}
+  };
+  function juntarContas() {
+    let c = null;
+    try { c = JSON.parse(localStorage.getItem(CHAVE_CONTAS) || 'null'); } catch {}
+    if (!c) return;
+    db.senhas = { ...(c.senhas || {}), ...(db.senhas || {}) };
+    db.trocar = { ...(c.trocar || {}), ...(db.trocar || {}) };
+    for (const u of c.novos || []) if (!db.usuarios.some((x) => x.id === u.id || x.login === u.login)) db.usuarios.push(u);
+  }
 
   // Traz as datas para perto de hoje, para os painéis do "mês atual" terem dados.
   function aproximarDatas(d) {
@@ -62,6 +78,11 @@
       const r = await fetchOriginal('dados.json', { cache: 'no-store' });
       db = aproximarDatas(await r.json());
       db.usuarioAtual = null;
+      db.usuariosOriginais = db.usuarios.map((u) => u.id);
+    }
+    if (!db.usuariosOriginais) db.usuariosOriginais = db.usuarios.filter((u) => !u.aguardando).map((u) => u.id);
+    juntarContas();
+    {
       salvar();
     }
   })();
@@ -748,12 +769,5 @@
     if (url) window.open(url, '_blank'); else alert('Na demonstração, só abrem os arquivos enviados nesta visita.');
   }, true);
 
-  // Faixa de aviso + botão para recomeçar
-  document.addEventListener('DOMContentLoaded', () => {
-    const faixa = document.createElement('div');
-    faixa.className = 'faixa-demo';
-    faixa.innerHTML = 'Demonstração · usuários: leandro, thalita, larissa, fabricio, mister… · senha do 1º acesso: <b>123456</b> <button type="button">Recomeçar do zero</button>';
-    faixa.querySelector('button').onclick = () => { try { localStorage.removeItem(CHAVE); } catch {} location.href = location.pathname; };
-    document.body.append(faixa);
-  });
+  // Em uso de verdade: sem faixa de demonstração e sem "recomeçar do zero" (que apagava tudo).
 })();

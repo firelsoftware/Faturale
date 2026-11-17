@@ -1500,3 +1500,4 @@ def producao_equipe(request):
         })
     linhas.sort(key=lambda r: -(r['fatura']['valor'] + r['xml']['valor']))
     return JsonResponse(linhas, safe=False)
+

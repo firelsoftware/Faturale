@@ -27,10 +27,10 @@ class Usuario(AbstractUser):
 
     # Abas que cada perfil enxerga. A diretoria vê tudo.
     ABAS = {
-        'faturista': ['faturamento', 'xml', 'minha', 'calendario', 'convenios'],
-        'supervisora': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'gestao', 'producao'],
-        'coordenadora': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'gestao', 'producao', 'coordenacao'],
-        'diretor': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'gestao', 'producao', 'coordenacao', 'diretoria'],
+        'faturista': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm'],
+        'supervisora': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao'],
+        'coordenadora': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao', 'coordenacao'],
+        'diretor': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao', 'coordenacao', 'diretoria'],
     }
 
     @property

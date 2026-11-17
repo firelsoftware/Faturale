@@ -74,10 +74,11 @@ const ICONES = {
   minha: '<path d="M12 20V10M18 20V4M6 20v-4"/>',
   calendario: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
   convenios: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  pm: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 15l2 2 4-4"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
 };
 const icone = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[n]}</svg>`;
-const NOMES_ABAS = { faturamento: 'Fatura', minha: 'Minha produção', xml: 'XML', calendario: 'Calendário', convenios: 'Convênios', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
+const NOMES_ABAS = { faturamento: 'Fatura', minha: 'Minha produção', xml: 'XML', calendario: 'Calendário', convenios: 'Convênios', pm: 'PM (XML)', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
 
 // ---------- Estado ----------
 const estado = { usuario: null, convenios: [], faturistas: [], aba: null };
@@ -229,7 +230,7 @@ function abrirAba(aba) {
   carregarAlertas();
   vivo.pendente = false;
   verificarMudancas();
-  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, convenios: telaConvenios, minha: telaMinha, gestao: telaGestao, producao: telaCoordenacao, coordenacao: telaCoordenacao, diretoria: telaDiretoria };
+  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, convenios: telaConvenios, pm: telaPm, minha: telaMinha, gestao: telaGestao, producao: telaCoordenacao, coordenacao: telaCoordenacao, diretoria: telaDiretoria };
   tentar(telas[aba])();
 }
 
@@ -1704,6 +1705,130 @@ function colunas(linhas, atual) {
 
 // ---------- Aba: Coordenação ----------
 const filtroCoord = { inicio: inicioMes(), fim: hoje(), competencia: '', convenio: '', faturista: '', por: 'convenio', producao: 'dia' };
+// ---------- Convênio PM: corrige os lotes XML TISS (SP-SADT) barrados. Roda no navegador (pm.js) ----------
+const CHAVE_PM = 'faturale-pm-lotes';
+const lerListaPm = () => { try { return JSON.parse(localStorage.getItem(CHAVE_PM) || '[]'); } catch { return []; } };
+const gravarListaPm = (l) => { try { localStorage.setItem(CHAVE_PM, JSON.stringify(l)); } catch {} };
+let unidadePm = '';
+let resultadosPm = [];
+
+async function telaPm() {
+  const pm = await import(`./pm.js${new URL(import.meta.url).search}`);
+  $('#conteudo').innerHTML = `
+    <div class="topo"><div><h1>PM · correção do XML</h1><p>Jogue os XML dos lotes barrados da Polícia Militar. O sistema aplica as regras, recalcula o hash e devolve <b>&lt;lote&gt;_corrigido.xml</b>. O arquivo não sai do seu computador e nada é enviado ao convênio.</p></div></div>
+    <div class="cartao">
+      <h2>XML dos lotes</h2>
+      <div class="pm-unidade"><span>Unidade:</span>
+        ${[['', 'Pelo CNPJ do arquivo'], ['ISOB', 'ISOB'], ['HOB', 'HOB']].map(([v, n]) => `<button type="button" class="btn btn-mini ${unidadePm === v ? 'btn-primario' : 'btn-claro'}" data-unidade="${v}">${n}</button>`).join('')}
+      </div>
+      <label class="solta" id="pm-solta">
+        ${icone('upload')}
+        <b>Arraste aqui um ou mais XML (guia SP-SADT)</b>
+        <span>ISOB padrão 4.01.00 · HOB padrão 3.05.00 · ISO-8859-1</span>
+        <input type="file" accept=".xml,text/xml" multiple hidden id="pm-arquivo">
+      </label>
+    </div>
+    <div id="pm-resultado"></div>
+    <div class="cartao" id="pm-prontos"></div>
+    <details class="cartao pm-detalhes"><summary><b>Regras aplicadas</b></summary>
+      <ol class="pm-regras">
+        <li>tipoAtendimento <b>11 → 04</b> (os outros ficam).</li>
+        <li>Código que começa com <b>9</b> é pacote: tabela <b>98</b>.</li>
+        <li>Consulta <b>10101306</b> e <b>10101312</b> → <b>10101012</b>, tabela 22 (a descrição fica).</li>
+        <li>Pronto-socorro <b>10101039</b> (tabela 22): não mexe.</li>
+        <li>Guia com <b>10101012</b>: a tag <b>senha</b> é apagada.</li>
+        <li>Capsulotomia YAG <b>30306019</b> na ISOB → <b>90300240</b>, tabela 98.</li>
+        <li><b>90300240</b> e <b>90300239</b>: inclui viaAcesso 1 e tecnicaUtilizada 1 depois da quantidade.</li>
+        <li>Guia repetida no lote: um <b>0</b> na frente de uma delas.</li>
+        <li>Executante: ISOB código 03056609000170 e CNES 7766777 · HOB CNPJ 00649756000166.</li>
+      </ol>
+      <p><b>Para e não devolve o arquivo:</b> <b class="pm-vermelho">A</b> código 41501144 (mesmo só na descrição) · <b class="pm-amarelo">B</b> exame aberto com código TUSS (tabela 22, fora consulta e pronto-socorro) · <b>C</b> qualquer situação fora das regras, hash original que não confere, unidade desconhecida.</p>
+      <p>Nunca altera valores, quantidades, datas, carteira, materiais e medicamentos. O total do lote tem que ficar igual.</p>
+    </details>`;
+
+  document.querySelectorAll('[data-unidade]').forEach((b) => b.addEventListener('click', () => { unidadePm = b.dataset.unidade; telaPm(); }));
+  const ler = tentar(async (arquivos) => {
+    if (!arquivos?.length) return;
+    const novos = [];
+    for (const arq of arquivos) {
+      const r = pm.corrigirPm(new Uint8Array(await arq.arrayBuffer()), arq.name, unidadePm);
+      novos.push(r);
+    }
+    // Lote repetido entre arquivos
+    const porLote = {};
+    for (const r of [...novos]) (porLote[r.numeroLote] ||= []).push(r);
+    for (const [lote, lista] of Object.entries(porLote)) {
+      if (lote && lista.length > 1) lista.forEach((r) => r.observacoes.push({ guia: '—', texto: `O lote ${lote} veio em ${lista.length} arquivos (${lista.map((x) => x.arquivo).join(', ')}).` }));
+    }
+    resultadosPm = novos;
+    const lista = lerListaPm().filter((x) => !novos.some((r) => r.numeroLote && r.numeroLote === x.lote));
+    for (const r of novos) {
+      lista.push({ lote: r.numeroLote || r.arquivo, unidade: r.unidade, guias: r.guias, valor: r.valorDepois, quando: new Date().toISOString(),
+        grupo: r.avisosB.length && !r.avisosA.length && !r.avisosC.length ? 'aberto' : r.bloqueado ? 'decisao' : 'pronto' });
+    }
+    gravarListaPm(lista);
+    mostrarPm();
+  });
+  const solta = $('#pm-solta');
+  solta.addEventListener('dragover', (e) => { e.preventDefault(); solta.classList.add('arrastando'); });
+  solta.addEventListener('dragleave', () => solta.classList.remove('arrastando'));
+  solta.addEventListener('drop', (e) => { e.preventDefault(); solta.classList.remove('arrastando'); ler([...e.dataTransfer.files]); });
+  $('#pm-arquivo').addEventListener('change', (e) => { ler([...e.target.files]); e.target.value = ''; });
+  mostrarPm();
+}
+
+const ROTULOS_PM = { pacote98: 'Pacote → 98', consulta: 'Consulta convertida', senha: 'Senha removida', tipoAtendimento: 'tipoAtendimento', duplicadas: 'Duplicadas', viaAcesso: 'Via de acesso', capsulotomia: 'Capsulotomia', executante: 'Executante' };
+
+function cartaoLotePm(r, i) {
+  const aviso = (cls, letra, titulo, itens) => !itens.length ? '' : `<div class="alerta ${cls}"><span class="alerta-icone">${letra}</span><div><b>${titulo}</b>${itens.map((x) => `<span>${x}</span>`).join('')}</div></div>`;
+  const guiaTxt = (g) => (g && g !== '—' ? `Guia ${esc(g)}: ` : '');
+  const contagem = Object.entries(r.contagem).filter(([, n]) => n).map(([k, n]) => `<span class="pm-chip">${ROTULOS_PM[k]} <b>${n}</b></span>`).join('') || '<span class="apagado">Nenhuma alteração</span>';
+  return `<div class="cartao pm-lote ${r.bloqueado ? 'pm-bloqueado' : ''}">
+    <h2>Lote ${esc(r.numeroLote || '—')} <small class="apagado">${esc(r.arquivo)} · ${esc(r.unidade || 'unidade?')}${r.padrao ? ` · TISS ${esc(r.padrao)}` : ''}</small>
+      <span class="acoes">${r.bloqueado ? '<span class="pm-parado">Parado: veja os avisos</span>' : `<button class="btn btn-primario btn-mini" data-baixar-pm="${i}">Baixar ${esc(r.nomeSaida)}</button>`}</span></h2>
+    <div class="pm-numeros">
+      <div><span>Guias</span><b>${num(r.guias)}</b></div>
+      <div><span>Total antes</span><b>${moeda(r.valorAntes)}</b></div>
+      <div><span>Total depois</span><b>${moeda(r.valorDepois)}</b> ${r.valorAntes === r.valorDepois ? '<small class="pm-ok">igual ✓</small>' : '<small class="pm-vermelho">mudou!</small>'}</div>
+    </div>
+    <div class="pm-chips">${contagem}</div>
+    <div class="pm-alertas">
+      ${aviso('urgente', 'A', 'A · Código 41501144: aguardando sua decisão', r.avisosA.map((a) => guiaTxt(a.guia) + esc(a.texto)))}
+      ${aviso('atencao', 'B', 'B · Exame aberto com código TUSS: não mexer neste lote', r.avisosB.map((b) => `Lote ${esc(r.numeroLote)} · guia ${esc(b.guia)} · ${esc(b.codigo)} ${esc(b.descricao)} · qtd ${esc(b.qtd)} · ${moeda(b.valor)}`))}
+      ${aviso('urgente', 'C', 'C · Fora das regras: mantido como veio', r.avisosC.map((c) => guiaTxt(c.guia) + esc(c.texto)))}
+      ${aviso('info', 'i', 'Para conferir', r.observacoes.map((o) => guiaTxt(o.guia) + esc(o.texto)))}
+    </div>
+    ${r.alteracoes.length ? `<details><summary>Ver as ${r.alteracoes.length} alterações por guia</summary><div class="tabela-caixa"><table>
+      <thead><tr><th>Guia</th><th>Alteração</th></tr></thead>
+      <tbody>${r.alteracoes.map((a) => `<tr><td>${esc(a.guia)}</td><td>${esc(a.texto)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+    <p class="apagado pm-hash">Hash: ${esc(r.hashAntigo || '—')} → <b>${esc(r.hashNovo || '—')}</b></p>
+  </div>`;
+}
+
+function mostrarPm() {
+  const caixa = $('#pm-resultado');
+  if (!caixa) return;
+  caixa.innerHTML = resultadosPm.map(cartaoLotePm).join('');
+  caixa.querySelectorAll('[data-baixar-pm]').forEach((b) => b.addEventListener('click', () => {
+    const r = resultadosPm[Number(b.dataset.baixarPm)];
+    const url = URL.createObjectURL(new Blob([r.xml], { type: 'application/xml' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: r.nomeSaida });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  }));
+
+  // Lista para a remessa (fica guardada neste navegador)
+  const lista = lerListaPm();
+  const grupo = (g, titulo) => {
+    const itens = lista.filter((x) => x.grupo === g);
+    return `<div class="pm-grupo"><h3>${titulo} <small>${itens.length}</small></h3>${!itens.length ? '<div class="apagado">Nenhum.</div>' : `<ul>${itens.map((x) => `<li><b>${esc(x.lote)}</b> · ${esc(x.unidade || '?')} · ${num(x.guias)} guias · ${moeda(x.valor)}</li>`).join('')}</ul>`}</div>`;
+  };
+  $('#pm-prontos').innerHTML = `<h2>Lotes para a remessa <span class="acoes">${lista.length ? '<button class="btn btn-claro btn-mini" id="pm-limpar">Limpar lista</button>' : ''}</span></h2>
+    <p class="apagado">"Pronto" quer dizer só que o XML foi corrigido pelas regras e não caiu em aviso A, B ou C. O sistema não sabe se o convênio aceitou o lote.</p>
+    <div class="pm-grupos">${grupo('pronto', 'Prontos para levar')}${grupo('aberto', 'Com exame aberto (não mexer)')}${grupo('decisao', 'Aguardando sua decisão')}</div>`;
+  $('#pm-limpar')?.addEventListener('click', () => { if (confirm('Limpar a lista de lotes da remessa?')) { gravarListaPm([]); mostrarPm(); } });
+}
+
 const ROTULOS_POR = { dia: 'Dia', mes: 'Mês', ano: 'Ano', convenio: 'Convênio', competencia: 'Competência', faturista: 'Faturista' };
 const rotuloGrupo = (por, g) => (por === 'dia' ? dataBR(g) : por === 'mes' || por === 'competencia' ? compBR(g) : g);
 
