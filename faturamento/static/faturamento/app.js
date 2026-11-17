@@ -1715,7 +1715,7 @@ let resultadosPm = [];
 async function telaPm() {
   const pm = await import(`./pm.js${new URL(import.meta.url).search}`);
   $('#conteudo').innerHTML = `
-    <div class="topo"><div><h1>PM · correção do XML</h1><p>Jogue os XML dos lotes barrados da Polícia Militar. O sistema aplica as regras, recalcula o hash e devolve <b>&lt;lote&gt;_corrigido.xml</b>. O arquivo não sai do seu computador e nada é enviado ao convênio.</p></div></div>
+    <div class="topo"><div><h1>PM · correção do XML</h1><p>Jogue os XML dos lotes barrados da Polícia Militar. O sistema aplica as regras, recalcula o hash e devolve <b>&lt;lote&gt;_corrigido.xml</b>. O arquivo não sai do seu computador, nada é enviado ao convênio e, depois de baixar, nada fica guardado.</p></div></div>
     <div class="cartao">
       <h2>XML dos lotes</h2>
       <div class="pm-unidade"><span>Unidade:</span>
@@ -1808,13 +1808,17 @@ function cartaoLotePm(r, i) {
 function mostrarPm() {
   const caixa = $('#pm-resultado');
   if (!caixa) return;
-  caixa.innerHTML = resultadosPm.map(cartaoLotePm).join('');
+  caixa.innerHTML = resultadosPm.map((r, i) => (r ? cartaoLotePm(r, i) : '')).join('');
   caixa.querySelectorAll('[data-baixar-pm]').forEach((b) => b.addEventListener('click', () => {
     const r = resultadosPm[Number(b.dataset.baixarPm)];
     const url = URL.createObjectURL(new Blob([r.xml], { type: 'application/xml' }));
     const a = Object.assign(document.createElement('a'), { href: url, download: r.nomeSaida });
     document.body.append(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
+    // Baixou: o lote sai da tela e o arquivo não fica guardado em lugar nenhum
+    resultadosPm[Number(b.dataset.baixarPm)] = null;
+    avisar(`${r.nomeSaida} baixado.`);
+    mostrarPm();
   }));
 
   // Lista para a remessa (fica guardada neste navegador)
