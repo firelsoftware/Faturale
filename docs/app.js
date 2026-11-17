@@ -1716,7 +1716,7 @@ let selecionadosPm = [];
 async function telaPm() {
   const pm = await import(`./pm.js${new URL(import.meta.url).search}`);
   $('#conteudo').innerHTML = `
-    <div class="topo"><div><h1>PM · correção do XML</h1><p>Jogue os XML dos lotes barrados da Polícia Militar. O sistema aplica as regras, recalcula o hash e devolve <b>&lt;lote&gt;_corrigido.xml</b>. O arquivo não sai do seu computador, nada é enviado ao convênio e, depois de baixar, nada fica guardado.</p></div></div>
+    <div class="topo"><div><h1>PM · correção do XML</h1><p>Jogue os XML dos lotes barrados da Polícia Militar. O sistema aplica as regras, recalcula o hash e devolve <b>nomedoarquivo_corrigido.xml</b>. O arquivo não sai do seu computador, nada é enviado ao convênio e, depois de baixar, nada fica guardado.</p></div></div>
     <div class="cartao">
       <h2>XML dos lotes</h2>
       <div class="pm-unidade"><span>Unidade:</span>

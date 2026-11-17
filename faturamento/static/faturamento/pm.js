@@ -327,7 +327,7 @@ export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
   }
 
   r.bloqueado = !!(r.avisosA.length || r.avisosB.length || r.avisosC.length);
-  r.nomeSaida = `${r.numeroLote || nomeArquivo.replace(/\.xml$/i, '')}_corrigido.xml`;
+  r.nomeSaida = `${nomeArquivo.replace(/\.xml$/i, '')}_corrigido.xml`; // mesmo nome do arquivo enviado
   r.xml = textoParaBytes(t);
   return r;
 }
