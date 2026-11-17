@@ -517,6 +517,7 @@
       const e = db.envios.find((x) => x.id === Number(r1));
       if (metodo === 'DELETE') { db.envios = db.envios.filter((x) => x !== e); salvar(); return json({ ok: true }); }
       Object.assign(e, { numero_lote: corpo.numeroLote, convenio_id: Number(corpo.convenioId), data_envio: corpo.dataEnvio, protocolo: corpo.protocolo || '', observacao: corpo.observacao || '', valor_protocolo: lerValor(corpo.valorProtocolo) });
+      if ('qtdGuias' in corpo) e.qtd_guias = Number(corpo.qtdGuias) > 0 ? Number(corpo.qtdGuias) : null;
       e.lote_id = db.lotes.find((l) => l.numero_lote === e.numero_lote && l.convenio_id === e.convenio_id)?.id || null;
       salvar(); return json({ ok: true, amarrado: !!e.lote_id });
     }

@@ -701,6 +701,7 @@ def envio_json(e, u):
         'data_envio': iso(e.data_envio), 'arquivo': bool(e.arquivo), 'nome_arquivo': e.nome_arquivo,
         'observacao': e.observacao, 'demo': e.demo,
         'valor_protocolo': float(e.valor_protocolo) if e.valor_protocolo is not None else None,
+        'qtd_guias': e.qtd_guias,
         'divergente': bool(e.lote and e.valor_protocolo is not None and abs(e.valor_protocolo - e.lote.valor_total) >= Decimal('0.01')),
     }
 
@@ -894,6 +895,8 @@ def envio_xml(request, pk):
         except ValueError as ex:
             return erro(str(ex))
     e.observacao = d.get('observacao') or ''
+    if 'qtdGuias' in d:
+        e.qtd_guias = int(d['qtdGuias']) if str(d.get('qtdGuias') or '').isdigit() and int(d['qtdGuias']) > 0 else None
     e.lote = Lote.objects.filter(numero_lote=numero, convenio=conv).first()  # reamarra se o lote mudou
     e.save()
     return JsonResponse({'ok': True, 'amarrado': bool(e.lote)})

@@ -944,6 +944,8 @@ async function telaXml() {
         <div class="campo"><label>Protocolo do portal (opcional)</label><input name="protocolo" value="${esc(d.protocolo)}"></div>
         <div class="campo"><label>Valor no protocolo do convênio (R$)</label><input name="valorProtocolo" inputmode="decimal" value="${d.valorProtocolo != null ? valorBR(d.valorProtocolo) : ''}" placeholder="0,00">
           <div class="guias-regra">Se for diferente do valor lançado, o faturista é avisado para corrigir.</div></div>
+        <div class="campo"><label>Quantidade de guias</label><input name="qtdGuias" type="number" min="1" value="${esc(d.extraidos?.qtdGuias || '')}">
+          ${d.extraidos?.guiasTexto ? `<div class="guias-regra">No PDF: ${esc(d.extraidos.guiasTexto)} → conta ${esc(d.extraidos.qtdGuias)}</div>` : ''}</div>
         ${todos ? `<div class="campo"><label>Quem enviou</label><select name="responsavelId">${opcoesFaturista(estado.usuario.id, false)}</select></div>` : ''}
       </div>
       <div class="campo"><label>Observação</label><textarea name="observacao" rows="2"></textarea></div>
@@ -989,7 +991,8 @@ async function telaXml() {
         <div class="campo"><label>Convênio</label><select name="convenioId">${opcoesConvenio(env.convenio_id, false)}</select></div>
         <div class="campo"><label>Data do envio</label><input name="dataEnvio" type="date" value="${env.data_envio}" required></div>
         <div class="campo"><label>Protocolo do portal</label><input name="protocolo" value="${esc(env.protocolo)}"></div>
-        <div class="campo"><label>Valor no protocolo (R$)</label><input name="valorProtocolo" inputmode="decimal" value="${env.valor_protocolo != null ? valorBR(env.valor_protocolo) : ''}"></div></div>
+        <div class="campo"><label>Valor no protocolo (R$)</label><input name="valorProtocolo" inputmode="decimal" value="${env.valor_protocolo != null ? valorBR(env.valor_protocolo) : ''}"></div>
+        <div class="campo"><label>Quantidade de guias</label><input name="qtdGuias" type="number" min="1" value="${esc(env.qtd_guias ?? env.lote_guias ?? '')}"></div></div>
         <div class="campo"><label>Observação</label><textarea name="observacao" rows="2">${esc(env.observacao)}</textarea></div>
         <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Cancelar</button><button class="btn btn-primario">Salvar</button></div></form>`,
       (el, fechar) => $('form', el).addEventListener('submit', tentar(async (ev) => {
