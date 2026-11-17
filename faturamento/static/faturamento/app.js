@@ -1711,6 +1711,7 @@ const lerListaPm = () => { try { return JSON.parse(localStorage.getItem(CHAVE_PM
 const gravarListaPm = (l) => { try { localStorage.setItem(CHAVE_PM, JSON.stringify(l)); } catch {} };
 let unidadePm = '';
 let resultadosPm = [];
+let selecionadosPm = [];
 
 async function telaPm() {
   const pm = await import(`./pm.js${new URL(import.meta.url).search}`);
@@ -1727,6 +1728,8 @@ async function telaPm() {
         <span>ISOB padrão 4.01.00 · HOB padrão 3.05.00 · ISO-8859-1</span>
         <input type="file" accept=".xml,text/xml" multiple hidden id="pm-arquivo">
       </label>
+      <div class="pm-acao"><span id="pm-escolhidos" class="apagado">Nenhum arquivo escolhido</span>
+        <button type="button" class="btn btn-primario" id="pm-corrigir" disabled>Corrigir TISS</button></div>
     </div>
     <div id="pm-resultado"></div>
     <div class="cartao" id="pm-prontos"></div>
@@ -1772,8 +1775,24 @@ async function telaPm() {
   const solta = $('#pm-solta');
   solta.addEventListener('dragover', (e) => { e.preventDefault(); solta.classList.add('arrastando'); });
   solta.addEventListener('dragleave', () => solta.classList.remove('arrastando'));
-  solta.addEventListener('drop', (e) => { e.preventDefault(); solta.classList.remove('arrastando'); ler([...e.dataTransfer.files]); });
-  $('#pm-arquivo').addEventListener('change', (e) => { ler([...e.target.files]); e.target.value = ''; });
+  // Escolhe os arquivos; a correção só roda no botão "Corrigir TISS"
+  const escolher = (arquivos) => {
+    selecionadosPm = arquivos.filter((a) => /\.xml$/i.test(a.name));
+    if (arquivos.length && !selecionadosPm.length) avisar('Escolha arquivos .xml.', true);
+    const nomes = selecionadosPm.map((a) => esc(a.name));
+    $('#pm-escolhidos').innerHTML = nomes.length ? `<b>${nomes.length} arquivo(s):</b> ${nomes.join(', ')}` : 'Nenhum arquivo escolhido';
+    $('#pm-escolhidos').classList.toggle('apagado', !nomes.length);
+    $('#pm-corrigir').disabled = !nomes.length;
+  };
+  solta.addEventListener('drop', (e) => { e.preventDefault(); solta.classList.remove('arrastando'); escolher([...e.dataTransfer.files]); });
+  $('#pm-arquivo').addEventListener('change', (e) => { escolher([...e.target.files]); e.target.value = ''; });
+  $('#pm-corrigir').addEventListener('click', async () => {
+    const arquivos = selecionadosPm;
+    escolher([]);
+    await ler(arquivos);
+    $('#pm-resultado').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  escolher(selecionadosPm);
   mostrarPm();
 }
 
@@ -1808,7 +1827,15 @@ function cartaoLotePm(r, i) {
 function mostrarPm() {
   const caixa = $('#pm-resultado');
   if (!caixa) return;
-  caixa.innerHTML = resultadosPm.map((r, i) => (r ? cartaoLotePm(r, i) : '')).join('');
+  const novo = resultadosPm.length ? `<div class="pm-novo"><span>${resultadosPm.some(Boolean) ? 'Confira e baixe os arquivos corrigidos.' : 'Tudo baixado ✓'}</span>
+      <button type="button" class="btn btn-primario" id="pm-novo">Corrigir novo TISS</button></div>` : '';
+  caixa.innerHTML = novo + resultadosPm.map((r, i) => (r ? cartaoLotePm(r, i) : '')).join('');
+  $('#pm-novo')?.addEventListener('click', () => {
+    resultadosPm = [];
+    mostrarPm();
+    $('#pm-solta').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    $('#pm-arquivo').click(); // já abre a escolha do próximo arquivo
+  });
   caixa.querySelectorAll('[data-baixar-pm]').forEach((b) => b.addEventListener('click', () => {
     const r = resultadosPm[Number(b.dataset.baixarPm)];
     const url = URL.createObjectURL(new Blob([r.xml], { type: 'application/xml' }));
