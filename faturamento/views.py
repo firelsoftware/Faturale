@@ -108,7 +108,7 @@ def anexar(campo, nome, caminho):
 def inicio(request):
     # "versao" muda quando app.js/styles.css mudam: o navegador baixa a versão nova em vez de usar a antiga guardada
     pasta = Path(__file__).resolve().parent / 'static' / 'faturamento'
-    versao = int(max((pasta / f).stat().st_mtime for f in ('app.js', 'styles.css')))
+    versao = int(max((pasta / f).stat().st_mtime for f in ('app.js', 'pm.js', 'styles.css')))
     return render(request, 'faturamento/index.html', {'versao': versao})
 
 

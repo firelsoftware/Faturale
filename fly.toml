@@ -1,0 +1,26 @@
+# Faturale no Fly.io, em São Paulo (perto do banco do Supabase).
+# Os segredos (DATABASE_URL, DJANGO_SECRET_KEY) ficam no Fly: fly secrets set ...
+app = 'faturale'
+primary_region = 'gru'
+
+[build]
+
+[env]
+  DJANGO_ALLOWED_HOSTS = 'faturale.fly.dev'
+  DJANGO_CSRF_ORIGINS = 'https://faturale.fly.dev'
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 1
+
+# PDFs dos lotes e protocolos ficam num disco que não some a cada atualização
+[mounts]
+  source = 'faturale_dados'
+  destination = '/data'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '1gb'
