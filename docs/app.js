@@ -1734,9 +1734,9 @@ async function telaPm() {
       <ol class="pm-regras">
         <li>tipoAtendimento <b>11 → 04</b> (os outros ficam).</li>
         <li>Código que começa com <b>9</b> é pacote: tabela <b>98</b>.</li>
-        <li>Consulta <b>10101306</b> e <b>10101312</b> → <b>10101012</b>, tabela 22 (a descrição fica).</li>
+        <li>Consultas de oftalmologia <b>10101304 a 10101313</b>: o código fica, tabela <b>00</b>.</li>
         <li>Pronto-socorro <b>10101039</b> (tabela 22): não mexe.</li>
-        <li>Guia com <b>10101012</b>: a tag <b>senha</b> é apagada.</li>
+        <li>Se vier <b>10101012</b>: tabela 22 e a tag <b>senha</b> da guia é apagada.</li>
         <li>Capsulotomia YAG <b>30306019</b> na ISOB → <b>90300240</b>, tabela 98.</li>
         <li><b>90300240</b> e <b>90300239</b>: inclui viaAcesso 1 e tecnicaUtilizada 1 depois da quantidade.</li>
         <li>Guia repetida no lote: um <b>0</b> na frente de uma delas.</li>
@@ -1777,7 +1777,7 @@ async function telaPm() {
   mostrarPm();
 }
 
-const ROTULOS_PM = { pacote98: 'Pacote → 98', consulta: 'Consulta convertida', senha: 'Senha removida', tipoAtendimento: 'tipoAtendimento', duplicadas: 'Duplicadas', viaAcesso: 'Via de acesso', capsulotomia: 'Capsulotomia', executante: 'Executante' };
+const ROTULOS_PM = { pacote98: 'Pacote → 98', consulta: 'Consulta (tabela)', senha: 'Senha removida', tipoAtendimento: 'tipoAtendimento', duplicadas: 'Duplicadas', viaAcesso: 'Via de acesso', capsulotomia: 'Capsulotomia', executante: 'Executante' };
 
 function cartaoLotePm(r, i) {
   const aviso = (cls, letra, titulo, itens) => !itens.length ? '' : `<div class="alerta ${cls}"><span class="alerta-icone">${letra}</span><div><b>${titulo}</b>${itens.map((x) => `<span>${x}</span>`).join('')}</div></div>`;

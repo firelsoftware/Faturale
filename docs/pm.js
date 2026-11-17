@@ -4,7 +4,8 @@
 
 const ISOB = { codigo: '03056609000170', cnes: '7766777' };
 const HOB_CNPJ = '00649756000166';
-const CONSULTAS_ANTIGAS = ['10101306', '10101312'];
+// Consultas de oftalmologia (10101304 a 10101313): o código fica, a tabela é 00
+const CONSULTAS_OFTALMO = ['10101304', '10101305', '10101306', '10101307', '10101308', '10101309', '10101310', '10101311', '10101312', '10101313'];
 const CONSULTA = '10101012';
 const PRONTO_SOCORRO = '10101039';
 const CAPSULOTOMIA_TUSS = '30306019';
@@ -183,13 +184,22 @@ export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
 
       if (codigo === PROIBIDO) return p; // já avisado (A)
 
-      // 3. Consulta -> 10101012, tabela 22 (a descrição fica)
-      if (CONSULTAS_ANTIGAS.includes(codigo) || codigo === CONSULTA) {
-        temConsulta = true;
-        if (codigo !== CONSULTA || tabela !== '22') {
-          p = trocaValor(trocaValor(p, 'codigoProcedimento', CONSULTA), 'codigoTabela', '22');
+      // 3. Consulta de oftalmologia: o código fica, tabela 00
+      if (CONSULTAS_OFTALMO.includes(codigo)) {
+        if (tabela !== '00') {
+          p = trocaValor(p, 'codigoTabela', '00');
           r.contagem.consulta++;
-          mudou(numero, 'consulta', `Consulta ${codigo} (tab. ${tabela}) → ${CONSULTA} (tab. 22)`);
+          mudou(numero, 'consulta', `Consulta ${codigo}: tabela ${tabela} → 00`);
+        }
+        return p;
+      }
+      // Consulta 10101012: tabela 22 e a guia fica sem senha
+      if (codigo === CONSULTA) {
+        temConsulta = true;
+        if (tabela !== '22') {
+          p = trocaValor(p, 'codigoTabela', '22');
+          r.contagem.consulta++;
+          mudou(numero, 'consulta', `Consulta ${codigo}: tabela ${tabela} → 22`);
         }
         return p;
       }
@@ -288,6 +298,16 @@ export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
       const [, codigo, data] = chave.split('|');
       obs(guias.join(', '), `Código ${codigo} cobrado ${guias.length}x para a mesma carteira${data ? ` em ${data.split('-').reverse().join('/')}` : ''}.`);
     }
+  }
+
+  // Rede de segurança: nada pode passar sem ser lido
+  if (!r.guias) C('—', 'Nenhuma guia SP-SADT (ans:guiaSP-SADT) no arquivo: nada foi corrigido.');
+  const outrasGuias = [...new Set([...t.matchAll(/<ans:(guia(?!SP-SADT\b)[A-Za-z-]*)>/g)].map((m) => m[1]))]
+    .filter((n) => !['guiaPrincipal', 'guiasTISS'].includes(n));
+  if (outrasGuias.length) C('—', `O lote tem guias de outro tipo (${outrasGuias.join(', ')}). Elas não foram corrigidas.`);
+  const naoLidos = t.replace(/<ans:procedimentoExecutado>[\s\S]*?<\/ans:procedimentoExecutado>/g, '').replace(/<ans:outrasDespesas>[\s\S]*?<\/ans:outrasDespesas>/g, '');
+  for (const m of naoLidos.matchAll(/<ans:codigoProcedimento>\s*([^<\s]*)/g)) {
+    C('—', `Código ${m[1]} está fora de ans:procedimentoExecutado e não foi corrigido.`);
   }
 
   // Conferência
