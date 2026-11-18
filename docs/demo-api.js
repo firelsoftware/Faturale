@@ -202,6 +202,120 @@
     }
     return linhas;
   }
+  // ---------- OCR (foto ou PDF escaneado), no próprio navegador ----------
+  let tesseractPronto = null;
+  const carregarTesseract = () => (tesseractPronto ||= new Promise((ok, falha) => {
+    if (window.Tesseract) return ok(window.Tesseract);
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js';
+    s.onload = () => ok(window.Tesseract);
+    s.onerror = () => { tesseractPronto = null; falha(new Error('Não consegui carregar o leitor de imagem (OCR). Confira a internet.')); };
+    document.head.append(s);
+  }));
+  let workerOcr = null;
+  async function ocrImagens(imagens) {
+    const T = await carregarTesseract();
+    workerOcr ||= await T.createWorker('por');
+    const linhas = [];
+    for (const img of imagens) {
+      const { data } = await workerOcr.recognize(img, { rotateAuto: true });
+      linhas.push(...data.text.split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean));
+    }
+    return linhas;
+  }
+  async function paginasComoImagem(buffer) {
+    const doc = await window.pdfjsLib.getDocument({ data: new Uint8Array(buffer).slice() }).promise;
+    const imagens = [];
+    for (let p = 1; p <= Math.min(doc.numPages, 10); p++) {
+      const pagina = await doc.getPage(p);
+      const vp = pagina.getViewport({ scale: 2.5 });
+      const c = document.createElement('canvas');
+      c.width = vp.width; c.height = vp.height;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+      await pagina.render({ canvasContext: ctx, viewport: vp }).promise;
+      imagens.push(c);
+    }
+    return imagens;
+  }
+  async function girar(imagem, graus) {
+    const bmp = imagem instanceof HTMLCanvasElement ? imagem : await createImageBitmap(imagem);
+    const lado = graus % 180 !== 0;
+    const c = document.createElement('canvas');
+    c.width = lado ? bmp.height : bmp.width; c.height = lado ? bmp.width : bmp.height;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.translate(c.width / 2, c.height / 2); ctx.rotate((graus * Math.PI) / 180);
+    ctx.drawImage(bmp, -bmp.width / 2, -bmp.height / 2);
+    return c;
+  }
+  // OCR erra letras em números (B44,48 = 844,48) e às vezes some a barra (77 = 7/7).
+  // Por isso: corrige os números, conta as linhas de paciente e confere com a soma das guias.
+  function analisarOcr(linhasBrutas) {
+    const corrigeNumero = (l) => l
+      .replace(/(^|[\s(])[Bb](?=\d)/g, '$18').replace(/(?<=\d)[Bb](?=[\d,.])/g, '8')
+      .replace(/(?<=\d)[Oo](?=[\d,.])/g, '0').replace(/(?<=[\d,.])[Oo](?=\d)/g, '0')
+      .replace(/(?<=\d)[lI|](?=[\d,.])/g, '1');
+    const linhas = linhasBrutas.map(corrigeNumero);
+    const d = analisar(linhas);
+    d.leitura = 'ocr';
+    // O número do lote aparece duas vezes (PROTOCOLO e Seq protocolo): se o OCR leu diferente, avisa
+    const juntas = linhas.join('\n');
+    const nProt = juntas.match(/PROTOCOLO:\s*(\d{4,})/i)?.[1];
+    const nSeq = juntas.match(/Seq\.?\s*protocolo:?\s*\(?(\d{4,})/i)?.[1];
+    if (nProt && nSeq && nProt !== nSeq) d.avisos.push(`O lote aparece como ${nProt} e como ${nSeq} no arquivo. Confira o número.`);
+    const pacientes = linhas.filter((l) => /^\d{5,8}\s+[A-Za-zÀ-ÿ]/.test(l));
+    const n = pacientes.length;
+    const totalGuia = (l) => (l.match(/\d{1,3}(?:\.\d{3})*,\d{2}/g) || []).pop();
+    const valores = pacientes.map(totalGuia).filter(Boolean).map(paraNumero);
+    const soma = Math.round(valores.reduce((s, v) => s + v, 0) * 100) / 100;
+    const lt = linhas.find((l) => /Total\s+do\s+protocolo/i.test(l)) || '';
+    if (!d.qtdGuias) {
+      const tk = (lt.replace(/.*protocolo/i, '').match(/\d+/) || [''])[0];
+      const meio = tk.length / 2;
+      if (tk.length >= 2 && tk.length % 2 === 0 && n && Math.min(+tk.slice(0, meio), +tk.slice(meio)) === n) {
+        d.guiasTexto = `${tk.slice(0, meio)}/${tk.slice(meio)}`; d.qtdGuias = n;
+      } else if (n) {
+        d.guiasTexto = `${n} contadas`; d.qtdGuias = n;
+        d.avisos.push(`Não li o "Total do protocolo": contei ${n} guias nas linhas. Confira.`);
+      }
+    }
+    if (soma && (!d.valorTotal || (valores.length === n && Math.abs(d.valorTotal - soma) >= 0.01 && lt.replace(/\D/g, '').includes(String(Math.round(soma * 100)))))) {
+      d.valorTotal = soma; // o total do protocolo é a soma das guias
+    } else if (soma && valores.length === n && Math.abs(d.valorTotal - soma) >= 0.01) {
+      d.avisos.push(`O total lido (${d.valorTotal.toFixed(2).replace('.', ',')}) não bate com a soma das guias (${soma.toFixed(2).replace('.', ',')}). Confira.`);
+    }
+    return d;
+  }
+  // Lê o protocolo: texto do PDF; se for escaneado, foto ou faltar algo, completa com OCR
+  const CAMPOS_LIDOS = ['numeroLote', 'convenioNome', 'convenioCodigo', 'prestador', 'tipo', 'periodoInicio', 'periodoFim', 'competencia',
+    'guiasTexto', 'qtdGuias', 'valorTotal', 'usuarioRodape', 'sufixoProtocolo', 'sufixoComHifen'];
+  async function lerProtocolo(f) {
+    const buf = await f.arrayBuffer();
+    let texto = null;
+    if (/\.pdf$/i.test(f.name)) {
+      await linhasDoPdf(new Uint8Array(buf).slice().buffer).then((linhas) => {
+        if (linhas.join('').replace(/\s/g, '').length >= 40) texto = analisar(linhas);
+      }).catch(() => {});
+      if (texto && texto.numeroLote && texto.qtdGuias && texto.valorTotal) return texto;
+    }
+    const imagens = /\.pdf$/i.test(f.name) ? await paginasComoImagem(buf) : [f];
+    let ocr = analisarOcr(await ocrImagens(imagens));
+    // Página digitalizada de lado ou de cabeça para baixo: gira e lê de novo
+    const nota = (x) => (x.numeroLote ? 2 : 0) + (x.qtdGuias ? 1 : 0) + (x.valorTotal ? 1 : 0);
+    for (const graus of [90, 270, 180]) {
+      if (nota(ocr) >= 4) break;
+      const girada = analisarOcr(await ocrImagens(await Promise.all(imagens.map((im) => girar(im, graus)))));
+      if (nota(girada) > nota(ocr)) ocr = girada;
+    }
+    if (texto) { // o que o texto achou vale mais; o OCR só completa o que faltou
+      for (const k of CAMPOS_LIDOS) if (texto[k]) ocr[k] = texto[k];
+      ocr.numeros = [...new Set([...texto.numeros, ...ocr.numeros])];
+    }
+    ocr.avisos = ocr.avisos.filter((a) => !(/lote/.test(a) && ocr.numeroLote) && !(/guias/.test(a) && ocr.qtdGuias) && !(/Valor/.test(a) && ocr.valorTotal) && !(/Convênio/.test(a) && ocr.convenioNome));
+    ocr.avisos.unshift('Lido por OCR (arquivo escaneado ou foto). Confira os números antes de salvar.');
+    return ocr;
+  }
   const paraNumero = (t) => Number(String(t).replace(/\./g, '').replace(',', '.'));
   const CAB = /(PROTOCOLO|Seq\.?\s*protocolo|Tipo\s*protocolo):.*$/i;
   function analisar(linhas) {
@@ -421,8 +535,9 @@
     if (r0 === 'lotes') {
       if (r1 === 'extrair') {
         const f = corpo.get('pdf');
-        if (!/\.pdf$/i.test(f.name)) return erro('Na demonstração, foto/escaneado (OCR) não está disponível. Use um PDF com texto.', 422);
-        const d = analisar(await linhasDoPdf(await f.arrayBuffer()));
+        if (!/\.(pdf|png|jpe?g)$/i.test(f.name)) return erro('Envie PDF ou foto (PNG/JPG).', 422);
+        let d;
+        try { d = await lerProtocolo(f); } catch (e) { return erro(e.message || 'Não consegui ler esse arquivo. Preencha os dados à mão.', 422); }
         const [g, origem, pes] = quemGerou(d);
         Object.assign(d, { geradoPor: g, geradoPorOrigem: origem, faturistaId: pes?.id || null, faturistaNome: pes?.nome || null });
         if (g && !pes) d.avisos.push(`"${g}" (quem gerou, no ${origem}) não está cadastrado na equipe. Escolha o faturista.`);
@@ -462,12 +577,18 @@
         const f = corpo.get('arquivo');
         let d = { numeroLote: '', convenioNome: '', convenioCodigo: '', numeros: [], tipo: 'outro' };
         const avisos = [];
-        if (/\.pdf$/i.test(f.name)) { const a = analisar(await linhasDoPdf(await f.arrayBuffer())); d = { ...a, tipoProtocolo: a.tipo, tipo: 'pdf' }; d.valor = d.valorTotal || null; }
+        if (/\.(pdf|png|jpe?g)$/i.test(f.name)) {
+          try {
+            const a = await lerProtocolo(f);
+            d = { ...a, tipoProtocolo: a.tipo, tipo: a.leitura === 'ocr' ? 'ocr' : 'pdf' }; d.valor = d.valorTotal || null;
+            avisos.push(...a.avisos.filter((x) => /OCR/.test(x)));
+          } catch (e) { avisos.push(e.message || 'Não consegui ler o arquivo. Escolha o lote abaixo ou digite o número.'); }
+        }
         else if (/\.xml$/i.test(f.name)) {
           const t = await f.text(); const tag = (n) => t.match(new RegExp(`<(?:\\w+:)?${n}>\\s*([^<\\s]+)`))?.[1] || '';
           const soma = (t.match(/<(?:\w+:)?valorTotalGeral>\s*([\d.]+)/g) || []).reduce((s2, m) => s2 + Number(m.replace(/.*>\s*/, '')), 0);
           d = { numeroLote: tag('numeroLote'), convenioCodigo: tag('registroANS'), convenioNome: '', protocolo: tag('numeroProtocolo'), numeros: t.match(/\b\d{4,12}\b/g) || [], tipo: 'xml', valor: soma || null };
-        } else avisos.push('Na demonstração, foto (OCR) não é lida: escolha o lote abaixo ou digite o número.');
+        } else avisos.push('Envie PDF, XML ou foto (PNG/JPG).');
         let c = acharConvenio(d.convenioNome, d.convenioCodigo);
         const doFat = q.get('contexto') === 'faturamento' && !veTodos(u);
         const baseL = doFat ? db.lotes.filter((l) => l.faturista_id === u.id) : db.lotes;
