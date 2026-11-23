@@ -23,23 +23,45 @@
     coordenadora: ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao', 'coordenacao'],
     diretor: ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao', 'coordenacao', 'diretoria'],
   };
-  const CHAVE_CONTAS = 'faturale-contas'; // senhas e cadastros: sobrevivem a atualizações e ao "recomeçar"
-  const salvar = () => {
-    try {
-      localStorage.setItem(CHAVE, JSON.stringify(db));
-      const fixos = new Set((db.usuariosOriginais || []));
-      localStorage.setItem(CHAVE_CONTAS, JSON.stringify({ senhas: db.senhas || {}, trocar: db.trocar || {},
-        novos: db.usuarios.filter((u) => !fixos.has(u.id)) }));
-    } catch {}
-  };
-  function juntarContas() {
+  // Senhas e cadastros ficam numa chave própria e são lidos na hora, sempre do que está gravado.
+  // Assim uma aba antiga aberta não volta a senha para 123456 quando salva outra coisa.
+  const CHAVE_CONTAS = 'faturale-contas';
+  const contas = () => {
     let c = null;
     try { c = JSON.parse(localStorage.getItem(CHAVE_CONTAS) || 'null'); } catch {}
-    if (!c) return;
-    db.senhas = { ...(c.senhas || {}), ...(db.senhas || {}) };
-    db.trocar = { ...(c.trocar || {}), ...(db.trocar || {}) };
+    return { senhas: {}, trocar: {}, novos: [], ...(c || {}) };
+  };
+  const gravarContas = (fn) => {
+    const c = contas();
+    fn(c);
+    try { localStorage.setItem(CHAVE_CONTAS, JSON.stringify(c)); } catch {}
+  };
+  const salvar = () => {
+    try { localStorage.setItem(CHAVE, JSON.stringify(db)); } catch {}
+    const fixos = new Set(db.usuariosOriginais || []);
+    const novos = db.usuarios.filter((u) => !fixos.has(u.id));
+    if (novos.length) {
+      gravarContas((c) => {
+        for (const u of novos) c.novos = [...c.novos.filter((x) => x.id !== u.id), u];
+      });
+    }
+  };
+  function juntarContas() {
+    const c = contas();
+    // Senhas de versões antigas (guardadas junto com os dados) passam para a chave própria
+    if (db.senhas || db.trocar) {
+      gravarContas((x) => {
+        x.senhas = { ...(db.senhas || {}), ...x.senhas };
+        x.trocar = { ...(db.trocar || {}), ...x.trocar };
+      });
+      delete db.senhas; delete db.trocar;
+    }
     for (const u of c.novos || []) if (!db.usuarios.some((x) => x.id === u.id || x.login === u.login)) db.usuarios.push(u);
   }
+  // Outra aba mudou os dados: esta aba passa a usar os dados novos (não sobrescreve com os antigos)
+  window.addEventListener('storage', (ev) => {
+    if (ev.key === CHAVE && ev.newValue) { try { db = JSON.parse(ev.newValue); } catch {} }
+  });
 
   // Traz as datas para perto de hoje, para os painéis do "mês atual" terem dados.
   function aproximarDatas(d) {
@@ -127,8 +149,8 @@
   const fazXml = (u) => u.perfil !== 'faturista' || (u.funcao || 'ambos') !== 'faturamento';
   const abasDe = (u) => ABAS[u.perfil].filter((a) => (a !== 'faturamento' || fazFat(u)) && (a !== 'xml' || fazXml(u)));
   const SENHA_INICIAL = '123456';
-  const senhaDe = (u) => (db.senhas ||= {})[u.id] || SENHA_INICIAL;
-  const precisaTrocar = (u) => (db.trocar ||= {})[u.id] !== false;
+  const senhaDe = (u) => contas().senhas[u.id] || SENHA_INICIAL;
+  const precisaTrocar = (u) => contas().trocar[u.id] !== false;
   const perfilJson = (u) => ({ id: u.id, nome: u.nome, login: u.login, perfil: u.perfil, abas: abasDe(u), funcao: u.funcao || 'ambos', modoDemo: false, regraGuias: 'menor', trocarSenha: precisaTrocar(u) });
   const duvidasDe = (c) => (db.duvidas ||= []).filter((d) => d.convenio_id === c.id);
   const convJson = (c) => ({ ...c, duvidas_abertas: duvidasDe(c).filter((d) => !d.resposta).length, duvidas_total: duvidasDe(c).length,
@@ -429,7 +451,7 @@
       if (db.usuarios.some((x) => x.login === loginC)) return erro('Esse usuário já existe. Escolha outro.', 409);
       const novo = { id: novoId(db.usuarios), nome: nomeC, login: loginC, email: String(corpo.email || ''), perfil: 'faturista',
         funcao: 'faturamento', ativo: false, aguardando: true, criado_em: hoje() };
-      db.usuarios.push(novo); (db.senhas ||= {})[novo.id] = senhaC; (db.trocar ||= {})[novo.id] = false; salvar();
+      db.usuarios.push(novo); gravarContas((c) => { c.senhas[novo.id] = senhaC; c.trocar[novo.id] = false; }); salvar();
       return json({ ok: true });
     }
     if (r0 === 'entrar') {
@@ -470,7 +492,7 @@
       if (nova.length < 6) return erro('A senha nova precisa de pelo menos 6 caracteres.');
       if (nova === senhaDe(u) || nova === SENHA_INICIAL) return erro('Escolha uma senha diferente da atual e da senha inicial.');
       if (nova !== String(corpo.confirmacao || '')) return erro('A confirmação não é igual à senha nova.');
-      db.senhas[u.id] = nova; db.trocar[u.id] = false; salvar();
+      gravarContas((c) => { c.senhas[u.id] = nova; c.trocar[u.id] = false; }); salvar();
       return json(perfilJson(u));
     }
     if (precisaTrocar(u)) return new Response(JSON.stringify({ erro: 'Troque sua senha para continuar.', trocarSenha: true }), { status: 428, headers: { 'content-type': 'application/json' } });
@@ -494,7 +516,7 @@
         db.usuarios.push({ id: novoId(db.usuarios), nome: corpo.nome, login: String(corpo.login).toLowerCase(), perfil: corpo.perfil, funcao: corpo.funcao || 'ambos', ativo: true, criado_em: hoje() });
       } else {
         Object.assign(pessoa(r1), { nome: corpo.nome, perfil: corpo.perfil, funcao: corpo.funcao || 'ambos', ativo: !!corpo.ativo });
-        if (corpo.redefinir) { delete (db.senhas ||= {})[Number(r1)]; (db.trocar ||= {})[Number(r1)] = true; } // volta para 123456
+        if (corpo.redefinir) gravarContas((c) => { delete c.senhas[Number(r1)]; c.trocar[Number(r1)] = true; }); // volta para 123456
       }
       salvar(); return json({ ok: true });
     }
