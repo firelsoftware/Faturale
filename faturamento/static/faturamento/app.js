@@ -228,6 +228,112 @@ $('#sair').addEventListener('click', async () => {
   mostrarLogin();
 });
 $('#minha-senha').addEventListener('click', () => trocarSenha(false));
+$('#meus-dados').addEventListener('click', tentar(() => meusDados()));
+
+// ---------- LGPD: Meus dados (acesso, correção, baixar os dados, pedidos) ----------
+const dataHora = (x) => (x ? new Date(x).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+const prazoResposta = (x) => { const d = new Date(x); d.setDate(d.getDate() + 15); return d.toLocaleDateString('pt-BR'); };
+const listaPedidos = (lista) => (!lista.length ? '' : `<h3>Meus pedidos</h3><ul class="md-pedidos">${lista.map((p) => `<li>
+  <b>${esc(p.tipo_nome)}</b> <span class="selo ${p.situacao === 'atendida' ? 'conferido' : p.situacao === 'recusada' ? 'devolvido' : 'lancado'}">${esc(p.situacao_nome)}</span>
+  <small class="apagado">${dataHora(p.criada_em)}</small>${p.resposta ? `<p>${esc(p.resposta).replace(/\n/g, '<br>')}</p>` : ''}</li>`).join('')}</ul>`);
+
+async function meusDados() {
+  const d = await api('/api/meus-dados');
+  const c = d.conta, n = d.contagem;
+  modal(`<h2>Meus dados</h2>
+    <p class="apagado" style="margin-top:-6px">O que o Faturale guarda sobre você. Veja a <a href="/politica-de-privacidade/" target="_blank" rel="noopener">Política de Privacidade</a>.</p>
+    <form class="form-meus">
+      <div class="campo"><label>Nome e sobrenome</label><input name="nome" value="${esc(c.nome)}" required maxlength="80" placeholder="ex.: Fabrício Alves"></div>
+      <div class="campo"><label>E-mail (opcional)</label><input name="email" type="email" value="${esc(c.email)}" maxlength="120" placeholder="ex.: nome@empresa.com.br"></div>
+      <dl class="md-lista"><dt>Usuário</dt><dd>${esc(c.usuario)} <small class="apagado">(não muda)</small></dd><dt>Perfil</dt><dd>${esc(c.perfil)} · ${esc(c.funcao)}</dd>
+        <dt>Cadastro</dt><dd>${dataHora(c.cadastro_em)}</dd><dt>Último acesso</dt><dd>${dataHora(c.ultimo_acesso)}</dd>
+        <dt>Ligado a você</dt><dd>${num(n.lotes)} lote(s) · ${num(n.envios_xml)} envio(s) de XML · ${num(n.mensagens_enviadas)} mensagem(ns) · ${num(n.duvidas)} dúvida(s)</dd></dl>
+      <div class="rodape"><button class="btn btn-claro">Salvar correção</button></div>
+    </form>
+    <h3>Baixar meus dados ou fazer um pedido</h3>
+    <form class="form-pedido">
+      <div class="campo"><label>O que você quer?</label><select name="acao"><option value="exportar">Baixar meus dados (arquivo)</option>
+        ${d.tipos.map((t) => `<option value="${t.valor}">Pedir: ${esc(t.nome)}</option>`).join('')}</select></div>
+      <div class="campo campo-desc oculto"><label>Explique o pedido (opcional)</label><textarea name="descricao" rows="2" maxlength="2000" placeholder="ex.: corrigir meu e-mail antigo"></textarea></div>
+      <div class="campo"><label>Sua senha (para confirmar que é você)</label><input name="senha" type="password" autocomplete="current-password" required></div>
+      <p class="erro-modal"></p>
+      <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Fechar</button><button class="btn btn-primario">Confirmar</button></div>
+    </form>
+    <div class="md-meus-pedidos">${listaPedidos(d.solicitacoes)}</div>
+    <p class="apagado md-nota">Pedidos são respondidos em até 15 dias. Alguns dados (como a produção lançada) podem precisar ser guardados mesmo após um pedido de exclusão; nesse caso, a resposta explica o motivo.</p>`,
+  (el) => {
+    const fm = $('.form-meus', el), fp = $('.form-pedido', el), msg = $('.erro-modal', el);
+    fm.addEventListener('submit', tentar(async (e) => {
+      e.preventDefault();
+      const r = await api('/api/meus-dados', { method: 'POST', corpo: { nome: fm.nome.value, email: fm.email.value } });
+      estado.usuario.nome = r.conta.nome; $('#nome-usuario').textContent = r.conta.nome;
+      avisar('Dados corrigidos.');
+    }));
+    fp.acao.addEventListener('change', () => $('.campo-desc', el).classList.toggle('oculto', fp.acao.value === 'exportar'));
+    fp.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.textContent = '';
+      try {
+        if (fp.acao.value === 'exportar') {
+          const dados = await api('/api/meus-dados/exportar', { method: 'POST', corpo: { senha: fp.senha.value } });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' }));
+          a.download = `meus-dados-faturale-${c.usuario}.json`;
+          a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+          avisar('Arquivo baixado.');
+        } else {
+          await api('/api/solicitacoes', { method: 'POST', corpo: { tipo: fp.acao.value, descricao: fp.descricao.value, senha: fp.senha.value } });
+          const r = await api('/api/meus-dados');
+          $('.md-meus-pedidos', el).innerHTML = listaPedidos(r.solicitacoes);
+          fp.descricao.value = '';
+          avisar('Pedido registrado. O TI responde em até 15 dias.');
+        }
+        fp.senha.value = '';
+      } catch (err) { msg.textContent = err.message; }
+    });
+  });
+}
+
+// TI: pedidos de privacidade da equipe
+async function pedidosLgpd() {
+  const caixa = $('#pedidos-lgpd');
+  if (!caixa) return;
+  const lista = await api('/api/solicitacoes');
+  const abertos = lista.filter((p) => p.situacao === 'aberta' || p.situacao === 'andamento').length;
+  caixa.innerHTML = `<div class="cartao"><h2>Pedidos de privacidade (LGPD) <small class="apagado">${abertos} em aberto</small></h2>
+    ${!lista.length ? '<div class="vazio">Nenhum pedido.</div>' : lista.map((p) => `<article class="pedido-lgpd" data-id="${p.id}">
+      <header><b>${esc(p.titular)}</b> <small class="apagado">${esc(p.titular_login)}</small> · ${esc(p.tipo_nome)}
+        <span class="selo ${p.situacao === 'atendida' ? 'conferido' : p.situacao === 'recusada' ? 'devolvido' : 'lancado'}">${esc(p.situacao_nome)}</span></header>
+      <small class="apagado">Pedido em ${dataHora(p.criada_em)}${p.respondida_em ? ` · respondido em ${dataHora(p.respondida_em)}` : ` · responder até ${prazoResposta(p.criada_em)}`}</small>
+      ${p.descricao ? `<p>${esc(p.descricao).replace(/\n/g, '<br>')}</p>` : ''}
+      <form class="pedido-resposta"><select name="situacao">${[['aberta', 'Aberta'], ['andamento', 'Em andamento'], ['atendida', 'Atendida'], ['recusada', 'Não atendida (com motivo)']].map(([k, v]) => `<option value="${k}" ${p.situacao === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+        <textarea name="resposta" rows="2" maxlength="4000" placeholder="Resposta para a pessoa (ex.: dados corrigidos em 25/11)">${esc(p.resposta)}</textarea>
+        <div class="acoes">${['eliminacao', 'anonimizacao'].includes(p.tipo) && p.titular_id && !p.titular_anonimizado ? '<button type="button" class="btn btn-perigo btn-mini" data-anonimizar>Anonimizar a conta</button>' : ''}<button class="btn btn-primario btn-mini">Salvar</button></div></form>
+    </article>`).join('')}</div>`;
+  $$('.pedido-lgpd', caixa).forEach((art) => {
+    const p = lista.find((x) => String(x.id) === art.dataset.id);
+    const f = $('form', art);
+    f.addEventListener('submit', tentar(async (e) => {
+      e.preventDefault();
+      await api(`/api/solicitacoes/${p.id}`, { method: 'POST', corpo: { situacao: f.situacao.value, resposta: f.resposta.value } });
+      avisar('Pedido atualizado.'); pedidosLgpd();
+    }));
+    $('[data-anonimizar]', art)?.addEventListener('click', () => modal(`<h2>Anonimizar a conta de ${esc(p.titular)}</h2>
+      <p><b>Não dá para desfazer.</b> Nome, usuário e e-mail são apagados e a conta fica desativada, sem senha.
+      A produção lançada (lotes e envios de XML) e as mensagens continuam guardadas, sem o nome da pessoa.</p>
+      <p>Antes, confira se não há motivo legal para guardar os dados com o nome (por exemplo, um processo).</p>
+      <form class="form-anon"><div class="campo"><label>Digite ANONIMIZAR para confirmar</label><input name="confirmacao" autocomplete="off" required></div>
+        <p class="erro-modal"></p>
+        <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Cancelar</button><button class="btn btn-perigo">Anonimizar</button></div></form>`,
+    (el, fechar) => $('.form-anon', el).addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await api(`/api/usuarios/${p.titular_id}/anonimizar`, { method: 'POST', corpo: { confirmacao: e.target.confirmacao.value } });
+        fechar(); avisar('Conta anonimizada.'); pedidosLgpd();
+      } catch (err) { $('.erro-modal', el).textContent = err.message; }
+    })));
+  });
+}
 
 // Troca de senha. "obrigatoria": senha inicial — não dá para fechar nem usar o sistema antes.
 function trocarSenha(obrigatoria) {
@@ -265,6 +371,7 @@ async function entrar() {
   $('#tela-app').classList.remove('oculto');
   const u = estado.usuario;
   $('#minha-senha').classList.toggle('oculto', !!u.modoDemo);
+  $('#meus-dados').classList.toggle('oculto', !!u.modoDemo || !!u.publico);
   mostrarBotaoChat(!u.trocarSenha && !u.publico);
   $('#sair').textContent = u.publico ? 'Entrar' : 'Sair';
   contarNaoLidas();
@@ -1226,9 +1333,9 @@ async function telaCalendario() {
   const feriados = Object.fromEntries(cal.feriados.map((f) => [f.data, f.descricao]));
 
   const linhaEntrega = (e, comData = false) => `<div class="entrega ${e.meu ? 'minha' : ''} ${e.concluido ? 'feita' : ''}" data-id="${e.id}"
-      title="${esc(`Fatura: ${e.faturista || '—'} · XML: ${e.tem_xml ? e.responsavel_xml || '—' : 'sem XML'}${e.concluido ? ` · entregue por ${e.concluido_por}` : ''}`)}">
+      title="${estado.usuario.publico ? '' : esc(`Fatura: ${e.faturista || '—'} · XML: ${e.tem_xml ? e.responsavel_xml || '—' : 'sem XML'}${e.concluido ? ` · entregue por ${e.concluido_por}` : ''}`)}">
       ${e.pode_concluir ? `<input type="checkbox" data-concluir ${e.concluido ? 'checked' : ''} aria-label="Marcar ${esc(e.convenio)} como entregue">` : '<span class="ponto"></span>'}
-      <span class="nome">${esc(e.convenio)}${e.observacao ? ` <small>${esc(e.observacao)}</small>` : ''}${comData ? ` <small>· ${esc(e.faturista || 'sem faturista')}</small>` : ''}</span>
+      <span class="nome">${esc(e.convenio)}${e.observacao ? ` <small>${esc(e.observacao)}</small>` : ''}${comData && !estado.usuario.publico ? ` <small>· ${esc(e.faturista || 'sem faturista')}</small>` : ''}</span>
       ${coord ? '<button class="tirar" data-tirar title="Tirar do calendário">×</button>' : ''}</div>`;
 
   // Grade do mês
@@ -1434,7 +1541,7 @@ function telaConvenios() {
         <div class="campo"><label>Mostrar</label><select id="cv-tag"><option value="">Todos</option>
           ${TAGS.map(([k, sim]) => `<option value="${k}" ${s.tag === k ? 'selected' : ''}>${sim}</option>`).join('')}
           <option value="vazio" ${s.tag === 'vazio' ? 'selected' : ''}>Sem particularidades informadas</option></select></div>
-        <div class="campo"><label>Pessoa</label><select id="cv-pessoa">${opcoesPessoa(s.pessoa, 'Todas')}</select></div>
+        <div class="campo ${eu.publico ? 'oculto' : ''}"><label>Pessoa</label><select id="cv-pessoa">${opcoesPessoa(s.pessoa, 'Todas')}</select></div>
       </div>
       <p class="apagado" style="margin:-4px 0 12px;font-size:12px">${lista.length} convênio(s)${semInfo ? ` · ${semInfo} ainda sem particularidades` : ''}${podeEditar ? ' · clique em "Editar" para preencher' : ''}</p>
       <div class="conv-grade">${lista.map((c) => `<article class="conv-card ${c.faturista_id === eu.id || c.xml_id === eu.id ? 'meu' : ''}" data-id="${c.id}">
@@ -1445,7 +1552,7 @@ function telaConvenios() {
           ${c.particularidades ? `<p class="conv-obs">${esc(c.particularidades).replace(/\n/g, '<br>')}</p>` : ''}
           ${(c.faq || []).length ? `<div class="faq">${c.faq.slice(-3).map((f) => `<div class="faq-item"><p class="faq-p">${esc(f.pergunta)}</p><p class="faq-r">${esc(f.resposta).replace(/\n/g, '<br>')}</p></div>`).join('')}
             ${c.faq.length > 3 ? `<button class="link-faq" data-duvida>Ver as ${c.faq.length} perguntas e respostas</button>` : ''}</div>` : ''}
-          <footer><span>Fatura: ${c.faturista ? esc(c.faturista) : ninguem}</span><span>XML: ${c.tem_xml ? (c.responsavel_xml ? esc(c.responsavel_xml) : ninguem) : 'sem XML'}</span>
+          <footer>${eu.publico ? '' : `<span>Fatura: ${c.faturista ? esc(c.faturista) : ninguem}</span><span>XML: ${c.tem_xml ? (c.responsavel_xml ? esc(c.responsavel_xml) : ninguem) : 'sem XML'}</span>`}
             <span>Portal: ${c.prazo_texto ? esc(c.prazo_texto) : ninguem}${c.aberto_hoje ? ' <span class="selo conferido">aberto hoje</span>' : ''}</span></footer>
         </article>`).join('') || '<div class="vazio">Nenhum convênio nesse filtro.</div>'}</div></div>`;
   } else {
@@ -1591,8 +1698,9 @@ async function telaGestao() {
 
 // Aba Usuários (perfil TI): só o cadastro de pessoas, sem a produção da equipe
 async function telaUsuarios() {
-  $('#conteudo').innerHTML = `<div class="topo"><div><h1>Usuários</h1><p>Liberar cadastros, criar usuários e gerar senhas temporárias.</p></div></div><div id="sub"></div>`;
+  $('#conteudo').innerHTML = `<div class="topo"><div><h1>Usuários</h1><p>Liberar cadastros, criar usuários, gerar senhas temporárias e responder pedidos de privacidade.</p></div></div><div id="sub"></div><div id="pedidos-lgpd"></div>`;
   await gestaoUsuarios();
+  await pedidosLgpd();
 }
 
 async function gestaoLotes() {

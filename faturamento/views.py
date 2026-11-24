@@ -1,5 +1,6 @@
 """API em JSON que as telas (static/faturamento/app.js) usam."""
 import json
+import os
 import re
 import secrets
 import time
@@ -9,6 +10,7 @@ from functools import wraps
 from pathlib import Path
 
 from django.conf import settings
+from django.core.serializers.json import DjangoJSONEncoder
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.core.files import File
 from django.db import IntegrityError, transaction
@@ -23,7 +25,8 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from .extrator import extrair_lote, ler_protocolo_xml
 from .seguranca import contar, excedeu, ip_do_cliente, log, senha_temporaria, zerar
 from .management.commands.semear import normalizar
-from .models import Convenio, DuvidaConvenio, EntregaCalendario, EnvioXml, Feriado, Lote, Mensagem, RegraConvenio, Usuario
+from .models import (Convenio, DuvidaConvenio, EntregaCalendario, EnvioXml, Feriado, Lote, Mensagem, RegraConvenio,
+                     SolicitacaoTitular, Usuario)
 
 
 # ---------- Utilidades ----------
@@ -138,12 +141,29 @@ def anexar(campo, nome, caminho):
 
 
 # ---------- Páginas ----------
+def versao_estaticos():
+    # muda quando app.js/styles.css mudam: o navegador baixa a versão nova em vez de usar a antiga guardada
+    pasta = Path(__file__).resolve().parent / 'static' / 'faturamento'
+    return int(max((pasta / f).stat().st_mtime for f in ('app.js', 'pm.js', 'styles.css')))
+
+
 @ensure_csrf_cookie
 def inicio(request):
-    # "versao" muda quando app.js/styles.css mudam: o navegador baixa a versão nova em vez de usar a antiga guardada
-    pasta = Path(__file__).resolve().parent / 'static' / 'faturamento'
-    versao = int(max((pasta / f).stat().st_mtime for f in ('app.js', 'pm.js', 'styles.css')))
-    return render(request, 'faturamento/index.html', {'versao': versao})
+    return render(request, 'faturamento/index.html', {'versao': versao_estaticos()})
+
+
+VERSAO_POLITICA = '1.0 · 24/11/2026'
+
+
+def politica_privacidade(request):
+    """Página pública. Os dados do controlador vêm das variáveis FATURALE_CONTROLADOR_*; sem elas, aparece [PENDENTE]."""
+    if request.method != 'GET':
+        return erro('Método não permitido.', 405)
+    c = {k: os.environ.get(f'FATURALE_CONTROLADOR_{k.upper()}', '').strip()
+         for k in ('nome', 'cnpj', 'endereco', 'encarregado', 'email')}
+    return render(request, 'faturamento/privacidade.html', {
+        'versao': versao_estaticos(), 'versao_politica': VERSAO_POLITICA, 'c': c,
+        'endereco': settings.FATURALE_ENDERECO or request.get_host(), 'usa_fontes_google': True})
 
 
 def perfil_json(u):
@@ -1565,22 +1585,27 @@ def publico_convenios(request):
                     .prefetch_related('duvidas'),
                 key=lambda c: normalizar(c.nome))
     feriados = feriados_do_mes()
-    return JsonResponse([convenio_json(c, feriados) for c in qs], safe=False)
+    return JsonResponse([sem_pessoas(convenio_json(c, feriados)) for c in qs], safe=False)
+
+
+def sem_pessoas(d):
+    """Consulta sem login não mostra quem da equipe cuida de cada convênio (LGPD: necessidade)."""
+    for k in ('faturista', 'faturista_id', 'xml_id', 'responsavel_xml', 'concluido_por'):
+        if k in d:
+            d[k] = None
+    return d
 
 
 @_so_get
 def publico_pessoas(request):
-    qs = Usuario.objects.filter(is_active=True).order_by('first_name')
-    return JsonResponse([{'id': u.id, 'nome': u.nome, 'perfil': u.perfil, 'funcao': u.funcao,
-                          'fatura': u.faz_faturamento, 'xml': u.faz_xml} for u in qs], safe=False)
+    return JsonResponse([], safe=False)  # a consulta sem login não lista a equipe
 
 
 def _entrega_publica(e):
     c = e.convenio
     return {'id': e.id, 'data': iso(e.data), 'convenio_id': c.id, 'convenio': c.nome, 'observacao': e.observacao,
             'concluido': e.concluido, 'concluido_por': None,
-            'faturista_id': c.faturista_id, 'faturista': c.faturista.nome if c.faturista else None,
-            'xml_id': c.responsavel_xml_id, 'responsavel_xml': c.responsavel_xml.nome if c.responsavel_xml else None,
+            'faturista_id': None, 'faturista': None, 'xml_id': None, 'responsavel_xml': None,
             'tem_xml': c.tem_xml, 'meu': False, 'pode_concluir': False}
 
 
@@ -1612,6 +1637,14 @@ def duvida_json(d):
             'criado_em': timezone.localtime(d.criado_em).isoformat(timespec='minutes'),
             'resposta': d.resposta, 'respondida_por': d.respondida_por.nome if d.respondida_por else None,
             'respondida_em': timezone.localtime(d.respondida_em).isoformat(timespec='minutes') if d.respondida_em else None}
+
+
+def duvida_publica(d):
+    """Na consulta sem login, dúvidas e respostas aparecem sem o nome de quem perguntou ou respondeu."""
+    j = duvida_json(d)
+    j['autor'] = 'Equipe Faturale' if d.autor_id else 'Consulta sem login'
+    j['respondida_por'] = 'Equipe Faturale' if d.respondida_por_id else None
+    return j
 
 
 def _duvidas_qs():
@@ -1671,7 +1704,7 @@ def publico_duvidas(request):
         return _criar_duvida(request, None)
     if request.method != 'GET' or not request.GET.get('convenio'):
         return erro('Informe o convênio.')
-    return JsonResponse([duvida_json(d) for d in _duvidas_qs().filter(convenio_id=request.GET['convenio'])[:200]], safe=False)
+    return JsonResponse([duvida_publica(d) for d in _duvidas_qs().filter(convenio_id=request.GET['convenio'])[:200]], safe=False)
 
 
 # ---------- Relatórios: produção de cada pessoa (inclusive quem ainda não produziu) ----------
@@ -1793,3 +1826,163 @@ def regra_imagem(request, pk):
     if not r or not r.imagem:
         return erro('Sem imagem.', 404)
     return servir_arquivo(r.imagem, f'regra-{r.id}')
+
+
+
+# ---------- LGPD: Meus dados e pedidos do titular ----------
+def _confere_senha(request, u):
+    """Antes de baixar dados ou registrar pedido, a pessoa digita a senha de novo (confirma que é ela)."""
+    k = f'meusdados-user:{u.id}'
+    if excedeu(k, 5):
+        return erro('Muitas tentativas. Espere 15 minutos e tente de novo.', 429)
+    if not u.check_password(str(request.dados.get('senha') or '')):
+        contar(k, 900)
+        log.warning('meus dados: senha errada usuario_id=%s', u.id)
+        return erro('A senha não confere.', 403)
+    zerar(k)
+    return None
+
+
+def _dt(x):
+    return timezone.localtime(x).isoformat(timespec='minutes') if x else None
+
+
+def solicitacao_json(s, com_titular=False):
+    j = {'id': s.id, 'tipo': s.tipo, 'tipo_nome': s.get_tipo_display(), 'descricao': s.descricao,
+         'situacao': s.situacao, 'situacao_nome': s.get_situacao_display(), 'resposta': s.resposta,
+         'criada_em': _dt(s.criada_em), 'respondida_em': _dt(s.respondida_em)}
+    if com_titular:
+        j['titular'] = s.usuario.nome if s.usuario else '(conta removida)'
+        j['titular_id'] = s.usuario_id
+        j['titular_login'] = s.usuario.username if s.usuario else ''
+        j['titular_anonimizado'] = bool(s.usuario and s.usuario.username.startswith('removido.'))
+    return j
+
+
+def meus_dados_json(u):
+    return {
+        'conta': {'nome': u.nome, 'usuario': u.username, 'email': u.email, 'perfil': u.get_perfil_display(),
+                  'funcao': u.get_funcao_display(), 'cadastro_em': _dt(u.date_joined), 'ultimo_acesso': _dt(u.last_login)},
+        'contagem': {'lotes': Lote.objects.filter(faturista=u).count(),
+                     'envios_xml': EnvioXml.objects.filter(responsavel=u).count(),
+                     'mensagens_enviadas': Mensagem.objects.filter(autor=u).count(),
+                     'duvidas': DuvidaConvenio.objects.filter(autor=u).count()},
+        'solicitacoes': [solicitacao_json(s) for s in SolicitacaoTitular.objects.filter(usuario=u)[:50]],
+        'tipos': [{'valor': k, 'nome': n} for k, n in SolicitacaoTitular.Tipo.choices],
+    }
+
+
+@api(None, ('GET', 'POST'))
+def meus_dados(request):
+    """GET: o que o sistema guarda sobre a pessoa. POST: corrige nome e e-mail (o usuário de login não muda)."""
+    u = request.user
+    if request.method == 'POST':
+        d = request.dados
+        nome = ' '.join(str(d.get('nome') or '').split())[:80]
+        email = str(d.get('email') or '').strip()[:120]
+        if len(partes_do_nome(nome)) < 2:
+            return erro('Escreva nome e sobrenome.')
+        if email and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email):
+            return erro('E-mail inválido.')
+        u.first_name, u.email = nome, email
+        u.save(update_fields=['first_name', 'email'])
+        log.info('meus dados corrigidos usuario_id=%s', u.id)
+    return JsonResponse(meus_dados_json(u))
+
+
+@api(None, ('POST',))
+def meus_dados_exportar(request):
+    """Portabilidade/acesso: baixa em JSON os dados da própria pessoa (não traz arquivos nem dados de colegas)."""
+    u = request.user
+    if (r := _confere_senha(request, u)):
+        return r
+    campos_lote = ['numero_lote', 'convenio__nome', 'competencia', 'qtd_guias', 'valor_total', 'unidade', 'prestador',
+                   'status', 'data_lancamento', 'criado_em']
+    dados = {
+        'gerado_em': _dt(timezone.now()),
+        'sistema': 'Faturale',
+        'conta': meus_dados_json(u)['conta'],
+        'lotes_lancados': list(Lote.objects.filter(faturista=u, demo=False).values(*campos_lote)),
+        'envios_xml': list(EnvioXml.objects.filter(responsavel=u, demo=False).values(
+            'numero_lote', 'convenio__nome', 'protocolo', 'data_envio', 'qtd_guias', 'valor_protocolo', 'nome_arquivo', 'criado_em')),
+        'mensagens_enviadas': [{'para': m.destinatario.nome if m.destinatario else 'Equipe toda', 'texto': m.texto,
+                                'anexo': m.nome_arquivo or None, 'em': _dt(m.criado_em)}
+                               for m in Mensagem.objects.filter(autor=u).select_related('destinatario')],
+        'duvidas': list(DuvidaConvenio.objects.filter(autor=u).values('convenio__nome', 'texto', 'criado_em', 'resposta')),
+        'pedidos_lgpd': [solicitacao_json(s) for s in SolicitacaoTitular.objects.filter(usuario=u)],
+    }
+    log.info('meus dados exportados usuario_id=%s', u.id)
+    r = HttpResponse(json.dumps(dados, cls=DjangoJSONEncoder, ensure_ascii=False, indent=2),
+                     content_type='application/json; charset=utf-8')
+    r['Content-Disposition'] = f'attachment; filename="meus-dados-faturale-{u.username}.json"'
+    return r
+
+
+@api(None, ('GET', 'POST'))
+def solicitacoes(request):
+    """GET: o TI vê todos os pedidos; os demais veem os seus. POST: a pessoa registra um pedido (com a senha)."""
+    u = request.user
+    if request.method == 'POST':
+        if (r := _confere_senha(request, u)):
+            return r
+        tipo = str(request.dados.get('tipo') or '')
+        if tipo not in SolicitacaoTitular.Tipo.values:
+            return erro('Escolha o tipo de pedido.')
+        s = SolicitacaoTitular.objects.create(usuario=u, tipo=tipo, descricao=str(request.dados.get('descricao') or '').strip()[:2000])
+        log.info('pedido LGPD registrado id=%s tipo=%s', s.id, tipo)  # sem o texto do pedido
+        return JsonResponse(solicitacao_json(s))
+    if u.perfil == 'ti':
+        return JsonResponse([solicitacao_json(s, True) for s in SolicitacaoTitular.objects.select_related('usuario')[:300]], safe=False)
+    return JsonResponse([solicitacao_json(s) for s in SolicitacaoTitular.objects.filter(usuario=u)], safe=False)
+
+
+@api(None, ('POST',))
+def solicitacao(request, pk):
+    """O TI responde o pedido (situação + resposta)."""
+    if request.user.perfil != 'ti':
+        return erro('Só o TI responde pedidos de privacidade.', 403)
+    s = SolicitacaoTitular.objects.filter(pk=pk).first()
+    if not s:
+        return erro('Pedido não encontrado.', 404)
+    situacao = str(request.dados.get('situacao') or '')
+    if situacao not in SolicitacaoTitular.Situacao.values:
+        return erro('Situação inválida.')
+    resposta = str(request.dados.get('resposta') or '').strip()[:4000]
+    if situacao in ('atendida', 'recusada') and not resposta:
+        return erro('Escreva a resposta para a pessoa (e o motivo, se não foi atendido).')
+    s.situacao, s.resposta = situacao, resposta
+    if situacao in ('atendida', 'recusada'):
+        s.respondida_em, s.respondida_por = timezone.now(), request.user
+    s.save()
+    log.info('pedido LGPD respondido id=%s situacao=%s', s.id, situacao)
+    return JsonResponse(solicitacao_json(s, True))
+
+
+def anonimizar_usuario(alvo):
+    """Tira os dados pessoais da conta e mantém a produção (lotes, envios) para a conferência do faturamento.
+    Irreversível. A conta fica desativada e sem senha."""
+    alvo.username = f'removido.{alvo.id}'
+    alvo.first_name, alvo.last_name, alvo.email = f'Pessoa removida {alvo.id}', '', ''
+    alvo.set_unusable_password()
+    alvo.is_active, alvo.aguardando_liberacao, alvo.reivindica = False, False, None
+    alvo.save()
+    DuvidaConvenio.objects.filter(autor=alvo).update(autor_nome='')
+
+
+@api(None, ('POST',))
+def usuario_anonimizar(request, pk):
+    """Só o TI. Exige digitar ANONIMIZAR. Não apaga a produção nem as mensagens (podem ser necessárias à empresa)."""
+    if request.user.perfil != 'ti':
+        return erro('Só o TI anonimiza contas.', 403)
+    if str(request.dados.get('confirmacao') or '') != 'ANONIMIZAR':
+        return erro('Digite ANONIMIZAR para confirmar.')
+    alvo = Usuario.objects.filter(pk=pk).first()
+    if not alvo:
+        return erro('Usuário não encontrado.', 404)
+    if alvo.id == request.user.id:
+        return erro('Você não pode anonimizar a própria conta.')
+    if alvo.username.startswith('removido.'):
+        return erro('Essa conta já foi anonimizada.')
+    anonimizar_usuario(alvo)
+    log.info('conta anonimizada usuario_id=%s por_id=%s', alvo.id, request.user.id)
+    return JsonResponse({'ok': True})

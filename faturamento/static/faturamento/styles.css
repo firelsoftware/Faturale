@@ -642,3 +642,46 @@ form.lancar button { width: 100%; padding: 10px; }
 .regras-lancar { margin-top: 14px; border-top: 1px dashed var(--borda); padding-top: 12px; }
 .regras-lancar > b { display: block; margin-bottom: 8px; }
 .regras-lancar .cartao { box-shadow: none; background: var(--azul-suave, #f4f7ff); }
+
+/* ---------- Política de Privacidade e Meus dados ---------- */
+.link-privacidade { display: block; margin-top: 14px; font-size: 12px; color: var(--texto-2); text-align: center; text-decoration: underline; }
+.lateral-privacidade { color: var(--prata); opacity: .8; margin: 8px 0 4px; }
+body.pagina-texto { background: var(--fundo); margin: 0; }
+.pt-topo { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; background: var(--navy-800); color: #fff; }
+.pt-marca { display: flex; align-items: center; gap: 10px; color: #fff; text-decoration: none; }
+.pt-marca img { width: 36px; height: 36px; }
+.pt-marca span { display: flex; flex-direction: column; line-height: 1.1; }
+.pt-marca small { font-size: 9.5px; letter-spacing: .12em; color: var(--prata); }
+.pt-corpo { max-width: 860px; margin: 0 auto; padding: 24px 16px 40px; line-height: 1.6; font-size: 15px; }
+.pt-corpo h1 { font-size: 26px; margin: 0 0 4px; }
+.pt-corpo h2 { font-size: 18px; margin: 32px 0 8px; color: var(--navy-700); scroll-margin-top: 12px; }
+.pt-versao { color: var(--texto-2); font-size: 13px; margin: 0 0 16px; }
+.pt-indice { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 12px 14px; background: var(--cartao); border: 1px solid var(--borda); border-radius: var(--raio); font-size: 13px; }
+.pt-indice a { color: var(--azul); text-decoration: none; }
+.pt-dados { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; background: var(--cartao); border: 1px solid var(--borda); border-radius: var(--raio); padding: 14px 16px; }
+.pt-dados dt { font-weight: 600; }
+.pt-dados dd { margin: 0; overflow-wrap: anywhere; }
+.pt-pendente { color: var(--amarelo); background: var(--amarelo-suave); border-radius: 4px; padding: 1px 4px; font-weight: 600; }
+p.pt-pendente { display: block; padding: 8px 10px; font-size: 13.5px; }
+.pt-tabela { overflow-x: auto; background: var(--cartao); border: 1px solid var(--borda); border-radius: var(--raio); }
+.pt-tabela table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 560px; }
+.pt-tabela th, .pt-tabela td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--borda); }
+.pt-tabela th { background: var(--azul-suave); font-weight: 600; }
+.pt-tabela tr:last-child td { border-bottom: 0; }
+.pt-rodape { text-align: center; padding: 18px 16px; font-size: 12.5px; color: var(--texto-2); border-top: 1px solid var(--borda); }
+@media (max-width: 600px) { .pt-dados { grid-template-columns: 1fr; gap: 2px; } .pt-dados dd { margin-bottom: 8px; } .pt-corpo h1 { font-size: 22px; } }
+.md-lista { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 13.5px; margin: 4px 0 10px; }
+.md-lista dt { color: var(--texto-2); }
+.md-lista dd { margin: 0; overflow-wrap: anywhere; }
+.modal h3 { font-size: 15px; margin: 18px 0 8px; padding-top: 14px; border-top: 1px solid var(--borda); }
+.md-pedidos { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; font-size: 13.5px; }
+.md-pedidos li { background: var(--fundo); border-radius: 8px; padding: 8px 10px; }
+.md-pedidos p { margin: 6px 0 0; }
+.md-nota { font-size: 12px; margin-top: 12px; }
+.pedido-lgpd { border: 1px solid var(--borda); border-radius: var(--raio); padding: 12px; margin-top: 10px; }
+.pedido-lgpd header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pedido-lgpd p { margin: 8px 0; }
+.pedido-resposta { display: grid; gap: 8px; margin-top: 8px; }
+.pedido-resposta textarea, .pedido-resposta select { width: 100%; font: inherit; padding: 8px; border: 1px solid var(--borda); border-radius: 8px; }
+.pedido-resposta .acoes { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+@media (max-width: 600px) { .md-lista { grid-template-columns: 1fr; gap: 0; } .md-lista dd { margin-bottom: 6px; } }

@@ -37,7 +37,7 @@ class SegurancaTests(TestCase):
 
     def test_publico_nao_mostra_login(self):
         dados = self.client.get('/api/publico/pessoas').json()
-        self.assertTrue(dados)
+        self.assertEqual(dados, [])  # LGPD: a consulta sem login não lista mais a equipe
         self.assertFalse(any('login' in p or 'username' in p or 'email' in p for p in dados))
 
     def test_apis_exigem_login(self):

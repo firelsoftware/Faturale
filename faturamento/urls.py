@@ -4,6 +4,7 @@ from . import views as v
 
 urlpatterns = [
     path('', v.inicio, name='inicio'),
+    path('politica-de-privacidade/', v.politica_privacidade, name='privacidade'),
     path('api/publico/convenios', v.publico_convenios),
     path('api/publico/pessoas', v.publico_pessoas),
     path('api/publico/calendario', v.publico_calendario),
@@ -16,6 +17,11 @@ urlpatterns = [
     path('api/cadastro', v.cadastrar),
     path('api/cadastro/usuario', v.cadastro_usuario),
     path('api/eu', v.eu),
+    path('api/meus-dados', v.meus_dados),
+    path('api/meus-dados/exportar', v.meus_dados_exportar),
+    path('api/solicitacoes', v.solicitacoes),
+    path('api/solicitacoes/<int:pk>', v.solicitacao),
+    path('api/usuarios/<int:pk>/anonimizar', v.usuario_anonimizar),
     path('api/senha', v.trocar_senha),
     path('api/pessoas', v.pessoas),
     path('api/usuarios', v.usuarios),

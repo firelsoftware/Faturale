@@ -308,3 +308,40 @@ class RegraConvenio(models.Model):
 
     def __str__(self):
         return f'{self.convenio} · {self.unidade or "todas"}: {self.titulo or self.codigo_envio}'
+
+
+class SolicitacaoTitular(models.Model):
+    """Pedido de direito do titular (LGPD, art. 18) feito pela própria pessoa em "Meus dados".
+    O TI responde. Fica guardado como registro de que o pedido foi atendido."""
+    class Tipo(models.TextChoices):
+        ACESSO = 'acesso', 'Confirmar e acessar meus dados'
+        CORRECAO = 'correcao', 'Corrigir dados'
+        ANONIMIZACAO = 'anonimizacao', 'Anonimizar ou bloquear dados'
+        ELIMINACAO = 'eliminacao', 'Eliminar dados'
+        PORTABILIDADE = 'portabilidade', 'Portabilidade'
+        COMPARTILHAMENTO = 'compartilhamento', 'Com quem meus dados são compartilhados'
+        CONSENTIMENTO = 'consentimento', 'Informação ou revogação de consentimento'
+        OUTRO = 'outro', 'Outro pedido'
+
+    class Situacao(models.TextChoices):
+        ABERTA = 'aberta', 'Aberta'
+        ANDAMENTO = 'andamento', 'Em andamento'
+        ATENDIDA = 'atendida', 'Atendida'
+        RECUSADA = 'recusada', 'Não atendida (com motivo)'
+
+    usuario = models.ForeignKey(Usuario, models.SET_NULL, null=True, blank=True, related_name='solicitacoes_titular')
+    tipo = models.CharField(max_length=20, choices=Tipo.choices)
+    descricao = models.TextField(max_length=2000, blank=True)
+    situacao = models.CharField(max_length=12, choices=Situacao.choices, default=Situacao.ABERTA)
+    resposta = models.TextField(max_length=4000, blank=True)
+    criada_em = models.DateTimeField(auto_now_add=True)
+    respondida_em = models.DateTimeField(null=True, blank=True)
+    respondida_por = models.ForeignKey(Usuario, models.SET_NULL, null=True, blank=True, related_name='+')
+
+    class Meta:
+        ordering = ['-id']
+        verbose_name = 'pedido do titular (LGPD)'
+        verbose_name_plural = 'pedidos dos titulares (LGPD)'
+
+    def __str__(self):
+        return f'{self.get_tipo_display()} #{self.id}'

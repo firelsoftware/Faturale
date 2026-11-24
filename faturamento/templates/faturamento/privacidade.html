@@ -1,0 +1,147 @@
+{% load static %}<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Política de Privacidade · Faturale</title>
+  <link rel="icon" href="{% static 'faturamento/logo-f.png' %}">
+  <link rel="stylesheet" href="{% static 'faturamento/styles.css' %}?v={{ versao }}">
+</head>
+<body class="pagina-texto">
+  <header class="pt-topo">
+    <a href="/" class="pt-marca"><img src="{% static 'faturamento/logo-f.png' %}" alt=""><span><b>FATURALE</b><small>CONSULTORIA EM SAÚDE</small></span></a>
+    <a href="/" class="btn btn-claro btn-mini">Voltar ao sistema</a>
+  </header>
+
+  <main class="pt-corpo">
+    <h1>Política de Privacidade</h1>
+    <p class="pt-versao">Versão {{ versao_politica }} · vale para o sistema Faturale em {{ endereco }}</p>
+
+    <nav class="pt-indice" aria-label="Nesta página">
+      <a href="#quem">1. Quem cuida dos dados</a><a href="#quais">2. Quais dados e para quê</a><a href="#pacientes">3. Dados de pacientes</a>
+      <a href="#cookies">4. Cookies</a><a href="#compartilhamento">5. Com quem compartilhamos</a><a href="#prazo">6. Por quanto tempo guardamos</a>
+      <a href="#seguranca">7. Segurança</a><a href="#direitos">8. Seus direitos</a><a href="#mudancas">9. Mudanças</a>
+    </nav>
+
+    <section id="quem">
+      <h2>1. Quem cuida dos dados</h2>
+      <p>O Faturale é o sistema interno de controle de faturamento da equipe da Faturale Consultoria em Saúde. É usado para lançar a produção de faturamento, enviar XML, acompanhar o calendário de entregas aos convênios, tirar dúvidas e conversar com a equipe.</p>
+      <dl class="pt-dados">
+        <dt>Controlador</dt><dd>{{ c.nome|default:'<span class="pt-pendente">[PENDENTE: razão social]</span>' }}</dd>
+        <dt>CNPJ</dt><dd>{{ c.cnpj|default:'<span class="pt-pendente">[PENDENTE: CNPJ]</span>' }}</dd>
+        <dt>Endereço</dt><dd>{{ c.endereco|default:'<span class="pt-pendente">[PENDENTE: endereço]</span>' }}</dd>
+        <dt>Encarregado (DPO)</dt><dd>{{ c.encarregado|default:'<span class="pt-pendente">[PENDENTE: nome do encarregado]</span>' }}</dd>
+        <dt>Contato de privacidade</dt><dd>{% if c.email %}<a href="mailto:{{ c.email }}">{{ c.email }}</a>{% else %}<span class="pt-pendente">[PENDENTE: e-mail de privacidade]</span>{% endif %}</dd>
+      </dl>
+    </section>
+
+    <section id="quais">
+      <h2>2. Quais dados usamos e para quê</h2>
+      <p>Usamos só o necessário para o trabalho de faturamento. Não usamos os dados para publicidade e não vendemos dados.</p>
+      <div class="pt-tabela"><table>
+        <thead><tr><th>Dados</th><th>De quem</th><th>Para quê</th><th>Base legal (LGPD)</th></tr></thead>
+        <tbody>
+          <tr><td>Nome e sobrenome, usuário (nome.sobrenome), e-mail (opcional), senha (guardada só como código irreversível), perfil e função</td><td>Pessoas da equipe</td><td>Criar a conta, entrar no sistema e liberar só as abas de cada função</td><td>Execução de contrato com a pessoa (art. 7º, V)</td></tr>
+          <tr><td>Data de cadastro, último acesso e quem liberou o cadastro</td><td>Pessoas da equipe</td><td>Controlar quem tem acesso e liberar novos cadastros</td><td>Legítimo interesse em manter o acesso seguro (art. 7º, IX)</td></tr>
+          <tr><td>Produção: lotes lançados, quantidade de guias, valores, convênio, unidade, datas e quem lançou ou conferiu</td><td>Pessoas da equipe</td><td>Organizar o faturamento, conferir lotes e acompanhar a produção da equipe</td><td>Execução de contrato (art. 7º, V) e legítimo interesse na gestão do trabalho (art. 7º, IX)</td></tr>
+          <tr><td>Mensagens e arquivos do chat</td><td>Pessoas da equipe</td><td>Conversar sobre o trabalho; só quem participa da conversa vê e baixa</td><td>Legítimo interesse na comunicação do trabalho (art. 7º, IX)</td></tr>
+          <tr><td>Dúvidas sobre convênios e o nome informado por quem pergunta</td><td>Equipe e quem usa a consulta sem login</td><td>Responder a dúvida. O nome não aparece para quem consulta sem login</td><td>Legítimo interesse em responder (art. 7º, IX)</td></tr>
+          <tr><td>Registro de segurança: usuário, endereço IP, data e hora de entradas, tentativas erradas, cadastro e troca de senha</td><td>Quem tenta entrar ou se cadastrar</td><td>Bloquear tentativas repetidas de adivinhar senha e investigar acessos indevidos. Nunca registramos senha</td><td>Legítimo interesse na segurança (art. 7º, IX)</td></tr>
+        </tbody>
+      </table></div>
+      <p class="pt-pendente">[PENDENTE: validar as bases legais acima com o jurídico.]</p>
+    </section>
+
+    <section id="pacientes">
+      <h2>3. Dados de pacientes nos arquivos de faturamento</h2>
+      <p>Os PDFs de protocolo e os XML de faturamento (padrão TISS) enviados ao sistema podem conter dados de pacientes: nome, número da carteirinha, guias e procedimentos. São <b>dados de saúde</b>, que a LGPD trata como dados sensíveis (art. 11).</p>
+      <ul>
+        <li>O sistema lê do arquivo só os totais do lote (número do lote, quantidade de guias, valor, convênio, prestador). Esses totais ficam no banco; o arquivo fica guardado para conferência.</li>
+        <li>A leitura de arquivos escaneados (OCR) acontece no próprio servidor do Faturale. O arquivo não é enviado a outro serviço de leitura.</li>
+        <li>O <b>Corretor de XML</b> (aba PM) corrige o arquivo dentro do seu navegador. O XML não é enviado ao servidor.</li>
+        <li>Um arquivo enviado e não confirmado é apagado automaticamente depois de 2 horas.</li>
+        <li>Só quem tem perfil para ver aquele lote consegue abrir o arquivo.</li>
+      </ul>
+      <p>Nesses arquivos a Faturale trata os dados em nome dos hospitais e prestadores que atende, para o faturamento junto aos convênios. <span class="pt-pendente">[PENDENTE: confirmar com o jurídico o papel da Faturale (operadora ou controladora) e a base legal do art. 11 em cada contrato com prestadores.]</span></p>
+    </section>
+
+    <section id="cookies">
+      <h2>4. Cookies e armazenamento no navegador</h2>
+      <p>O Faturale usa apenas cookies necessários para funcionar. Não usamos cookies de publicidade nem de estatística, por isso não há aviso de cookies para aceitar.</p>
+      <div class="pt-tabela"><table>
+        <thead><tr><th>Cookie</th><th>Para quê</th><th>Duração</th></tr></thead>
+        <tbody>
+          <tr><td><code>sessionid</code></td><td>Manter você conectado depois de entrar</td><td>Até 12 horas, ou até clicar em Sair</td></tr>
+          <tr><td><code>csrftoken</code></td><td>Proteger os formulários contra envio feito por outro site</td><td>1 ano</td></tr>
+        </tbody>
+      </table></div>
+      <p>Se você permitir, o navegador mostra avisos de mensagens novas do chat. Essa permissão fica no seu navegador e pode ser retirada nas configurações dele.</p>
+      {% if usa_fontes_google %}<p>As letras (fonte Montserrat) do sistema vêm do Google Fonts. Ao abrir o sistema, o navegador pede essas letras aos servidores do Google, que recebem o endereço IP de quem acessa.</p>{% endif %}
+    </section>
+
+    <section id="compartilhamento">
+      <h2>5. Com quem compartilhamos</h2>
+      <p>Não vendemos nem cedemos dados. Usamos estes fornecedores para o sistema funcionar:</p>
+      <div class="pt-tabela"><table>
+        <thead><tr><th>Fornecedor</th><th>O que faz</th><th>Onde ficam os dados</th></tr></thead>
+        <tbody>
+          <tr><td>Fly.io</td><td>Servidor onde o sistema roda e onde ficam os arquivos enviados</td><td>São Paulo (Brasil). Empresa sediada nos EUA</td></tr>
+          <tr><td>Supabase</td><td>Banco de dados (contas, produção, mensagens, dúvidas)</td><td>São Paulo (Brasil). Empresa sediada nos EUA</td></tr>
+          {% if usa_fontes_google %}<tr><td>Google (Google Fonts)</td><td>Entrega das letras do sistema</td><td>Recebe o endereço IP de quem acessa</td></tr>{% endif %}
+        </tbody>
+      </table></div>
+      <p>Também podemos informar dados a autoridades quando a lei ou uma ordem judicial exigir.</p>
+      <p class="pt-pendente">[PENDENTE: confirmar os contratos e termos de tratamento de dados com cada fornecedor e avaliar a transferência internacional (art. 33), já que as empresas têm sede nos EUA.]</p>
+    </section>
+
+    <section id="prazo">
+      <h2>6. Por quanto tempo guardamos</h2>
+      <ul>
+        <li><b>Conta:</b> enquanto a pessoa trabalhar com a Faturale. Depois, a conta é desativada e os dados pessoais podem ser anonimizados.</li>
+        <li><b>Produção e arquivos de faturamento:</b> guardados enquanto forem necessários para conferência, recursos de glosa e obrigações com convênios e prestadores. <span class="pt-pendente">[PENDENTE: prazo definido com o jurídico e a contabilidade.]</span></li>
+        <li><b>Mensagens e anexos do chat:</b> <span class="pt-pendente">[PENDENTE: prazo a definir.]</span></li>
+        <li><b>Arquivos enviados e não confirmados:</b> 2 horas.</li>
+        <li><b>Registros de segurança:</b> ficam no registro do servidor pelo prazo de retenção do fornecedor. <span class="pt-pendente">[PENDENTE: confirmar o prazo e avaliar a guarda de registros de acesso.]</span></li>
+      </ul>
+      <p>Quando um dado precisa ser guardado por obrigação legal ou para defesa em processo, ele fica guardado mesmo após um pedido de exclusão, e explicamos o motivo na resposta.</p>
+    </section>
+
+    <section id="seguranca">
+      <h2>7. Como protegemos</h2>
+      <ul>
+        <li>Conexão sempre criptografada (HTTPS).</li>
+        <li>Senhas guardadas só como código irreversível; exigência de senha forte.</li>
+        <li>Bloqueio temporário depois de várias tentativas erradas de entrar.</li>
+        <li>Cada perfil vê só o que precisa. Quem cuida das contas (TI) não vê a produção da equipe.</li>
+        <li>Novos cadastros só funcionam depois de liberados por TI, coordenação ou supervisão.</li>
+        <li>Arquivos e anexos só são abertos por quem tem permissão.</li>
+      </ul>
+      <p>Se acontecer um incidente de segurança que possa trazer risco ou dano relevante, avisaremos as pessoas afetadas e a ANPD, como manda a LGPD (art. 48).</p>
+    </section>
+
+    <section id="direitos">
+      <h2>8. Seus direitos e como pedir</h2>
+      <p>Pela LGPD (art. 18), você pode pedir:</p>
+      <ul class="pt-direitos">
+        <li>confirmação de que tratamos seus dados e acesso a eles;</li>
+        <li>correção de dados incompletos, errados ou desatualizados;</li>
+        <li>anonimização, bloqueio ou eliminação de dados desnecessários ou tratados em desacordo com a lei;</li>
+        <li>portabilidade (seus dados em arquivo);</li>
+        <li>informação sobre com quem compartilhamos seus dados;</li>
+        <li>informação sobre a possibilidade de não dar consentimento, quando ele for a base legal, e revogação do consentimento;</li>
+        <li>revisão de decisões tomadas só de forma automática (o Faturale não toma decisões automáticas sobre pessoas).</li>
+      </ul>
+      <p><b>Quem tem conta:</b> entre no sistema e clique em <b>Meus dados</b>. Lá você vê seus dados, corrige nome e e-mail, baixa seus dados em arquivo e registra pedidos. Para baixar ou pedir, o sistema pede sua senha de novo, para confirmar que é você.</p>
+      <p><b>Quem não tem conta</b> (por exemplo, pacientes ou quem mandou uma dúvida sem login): escreva para {% if c.email %}<a href="mailto:{{ c.email }}">{{ c.email }}</a>{% else %}<span class="pt-pendente">[PENDENTE: e-mail de privacidade]</span>{% endif %}. Podemos pedir informações para confirmar sua identidade antes de responder. Pedidos sobre dados de pacientes podem ser encaminhados ao hospital ou prestador responsável.</p>
+      <p>Respondemos em até 15 dias (art. 19). Você também pode reclamar à Autoridade Nacional de Proteção de Dados (ANPD).</p>
+    </section>
+
+    <section id="mudancas">
+      <h2>9. Mudanças nesta política</h2>
+      <p>Quando esta política mudar, a versão e a data no topo serão atualizadas.</p>
+    </section>
+  </main>
+
+  <footer class="pt-rodape">Faturale · Consultoria em Saúde · <a href="/">Voltar ao sistema</a></footer>
+</body>
+</html>
