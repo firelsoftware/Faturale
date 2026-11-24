@@ -2065,7 +2065,9 @@ function cartaoLotePm(r, i) {
   const contagem = Object.entries(r.contagem).filter(([, n]) => n).map(([k, n]) => `<span class="pm-chip">${ROTULOS_PM[k]} <b>${n}</b></span>`).join('') || '<span class="apagado">Nenhuma alteração</span>';
   return `<div class="cartao pm-lote ${r.bloqueado ? 'pm-bloqueado' : ''}">
     <h2>Lote ${esc(r.numeroLote || '—')} <small class="apagado">${esc(r.arquivo)} · ${esc(r.unidade || 'unidade?')}${r.padrao ? ` · TISS ${esc(r.padrao)}` : ''}</small>
-      <span class="acoes">${r.bloqueado ? '<span class="pm-parado">Parado: veja os avisos</span>' : `<button class="btn btn-primario btn-mini" data-baixar-pm="${i}">Baixar ${esc(r.nomeSaida)}</button>`}</span></h2>
+      <span class="acoes">${r.travado ? '<span class="pm-parado">Parado: o arquivo não pode ser liberado</span>'
+        : r.bloqueado ? `<span class="pm-parado">Tem avisos: confira antes de mandar</span><button class="btn btn-claro btn-mini" data-baixar-pm="${i}">Baixar ${esc(r.nomeSaida)} mesmo assim</button>`
+          : `<button class="btn btn-primario btn-mini" data-baixar-pm="${i}">Baixar ${esc(r.nomeSaida)}</button>`}</span></h2>
     <div class="pm-numeros">
       <div><span>Guias</span><b>${num(r.guias)}</b></div>
       <div><span>Total antes</span><b>${moeda(r.valorAntes)}</b></div>

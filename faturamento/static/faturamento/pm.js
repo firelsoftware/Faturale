@@ -62,10 +62,28 @@ export function md5(bytes) {
 // Hash TISS: MD5 do texto de todos os elementos, na ordem, sem espaços nas pontas,
 // sem o ans:hash e sem a declaração <?xml ...?>.
 const PONTAS = /^[ \t\n\r\v\f]+|[ \t\n\r\v\f]+$/g;
-export function hashTiss(texto) {
+const ENTIDADES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const tirarEntidades = (s) => s.replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (m, e) => {
+  if (e[0] !== '#') return ENTIDADES[e.toLowerCase()] ?? m;
+  const n = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+  return n < 256 ? String.fromCharCode(n) : m;
+});
+function utf8ParaLatin1(s) {
+  try {
+    const u = new TextDecoder('utf-8', { fatal: true }).decode(textoParaBytes(s));
+    return [...u].every((c) => c.charCodeAt(0) < 256) ? u : null;
+  } catch { return null; }
+}
+const latin1ParaUtf8 = (s) => bytesParaTexto(new TextEncoder().encode(s));
+// Formas de calcular o hash que os sistemas de origem usam. 'bytes' é a da ANS.
+export const MODOS_HASH = ['bytes', 'utf8', 'latin1', 'entidades', 'utf8+entidades'];
+export function hashTiss(texto, modo = 'bytes') {
   const corpo = texto.replace(/<ans:hash>[\s\S]*?<\/ans:hash>/g, '').replace(/<\?xml[\s\S]*?\?>/g, '');
   let junto = '';
   for (const m of corpo.matchAll(/>([^<]*)</g)) junto += m[1].replace(PONTAS, '');
+  if (modo.includes('entidades')) junto = tirarEntidades(junto);
+  if (modo.startsWith('utf8')) junto = utf8ParaLatin1(junto) ?? junto;
+  if (modo === 'latin1') junto = latin1ParaUtf8(junto);
   return md5(textoParaBytes(junto));
 }
 
@@ -100,7 +118,7 @@ export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
     guias: 0, valorAntes: 0, valorDepois: 0,
     contagem: { pacote98: 0, consulta: 0, senha: 0, tipoAtendimento: 0, duplicadas: 0, viaAcesso: 0, capsulotomia: 0, executante: 0 },
     alteracoes: [], avisosA: [], avisosB: [], avisosC: [], observacoes: [],
-    unidade: '', unidadeOrigem: '', hashAntigo: '', hashNovo: '', bloqueado: false, xml: null,
+    unidade: '', unidadeOrigem: '', hashAntigo: '', hashNovo: '', hashModo: 'bytes', hashConfere: false, bloqueado: false, travado: false, xml: null,
   };
   const C = (guia, texto) => r.avisosC.push({ guia, texto });
   const obs = (guia, texto) => r.observacoes.push({ guia, texto });
@@ -108,7 +126,7 @@ export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
 
   if (!/<ans:mensagemTISS[\s>]/.test(t)) {
     C('—', 'O arquivo não parece um XML TISS da ANS (não tem ans:mensagemTISS).');
-    r.bloqueado = true;
+    r.bloqueado = r.travado = true;
     return r;
   }
 
@@ -116,7 +134,13 @@ export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
   const hashTag = t.match(/<ans:hash>([^<]*)<\/ans:hash>/);
   r.hashAntigo = hashTag ? hashTag[1].trim() : '';
   if (!hashTag) C('—', 'O arquivo não tem a tag ans:hash.');
-  else if (hashTiss(original) !== r.hashAntigo.toLowerCase()) C('—', 'O cálculo do hash não reproduz o hash original do arquivo. Parei aqui: confira o arquivo.');
+  else {
+    const modo = MODOS_HASH.find((m) => hashTiss(original, m) === r.hashAntigo.toLowerCase());
+    r.hashConfere = !!modo;
+    r.hashModo = modo || 'bytes';
+    if (!modo) C('—', 'O hash que veio no arquivo não bate com o cálculo padrão da ANS (o sistema de origem pode ter calculado errado). O hash novo foi calculado pelo padrão da ANS.');
+    else if (modo !== 'bytes') obs('—', `Hash original calculado no formato "${modo}"; o novo foi calculado do mesmo jeito.`);
+  }
 
   // Unidade
   r.unidadeOrigem = detectarUnidade(t);
@@ -313,17 +337,17 @@ export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
   // Conferência
   r.valorAntes = somaValorTotalGeral(original) / 100;
   r.valorDepois = somaValorTotalGeral(t) / 100;
-  if (r.valorAntes !== r.valorDepois) C('—', 'O total do lote mudou depois da correção. Arquivo não liberado.');
+  if (r.valorAntes !== r.valorDepois) { C('—', 'O total do lote mudou depois da correção. Arquivo não liberado.'); r.travado = true; }
   if (hashTag) {
-    let novo = hashTiss(t);
+    let novo = hashTiss(t, r.hashModo);
     if (/[A-F]/.test(r.hashAntigo) && !/[a-f]/.test(r.hashAntigo)) novo = novo.toUpperCase();
     t = t.replace(/(<ans:hash>\s*)[^<\s]*/, (_, a) => `${a}${novo}`);
     r.hashNovo = novo;
-    if (hashTiss(t) !== novo.toLowerCase()) C('—', 'O hash novo não confere com o conteúdo final.');
+    if (hashTiss(t, r.hashModo) !== novo.toLowerCase()) { C('—', 'O hash novo não confere com o conteúdo final.'); r.travado = true; }
   }
   if (typeof DOMParser !== 'undefined') {
     const doc = new DOMParser().parseFromString(t, 'application/xml');
-    if (doc.getElementsByTagName('parsererror').length) C('—', 'O XML corrigido não ficou bem formado.');
+    if (doc.getElementsByTagName('parsererror').length) { C('—', 'O XML corrigido não ficou bem formado.'); r.travado = true; }
   }
 
   r.bloqueado = !!(r.avisosA.length || r.avisosB.length || r.avisosC.length);
