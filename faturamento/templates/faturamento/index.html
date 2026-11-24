@@ -17,7 +17,22 @@
       <div class="marca-sub">CONSULTORIA EM SAÚDE</div>
 
       <div class="entrada">
-        <h2 class="entrada-titulo" id="entrada-titulo">Entrar</h2>
+        <div class="entrada-titulo" id="entrada-titulo">
+          <span class="avatar-login" role="img" aria-label="Entrar">
+            <svg viewBox="0 0 64 64" aria-hidden="true">
+              <defs>
+                <linearGradient id="av-fundo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8cc4ff"/><stop offset="1" stop-color="#2f6bff"/></linearGradient>
+                <clipPath id="av-corte"><circle cx="32" cy="32" r="30"/></clipPath>
+              </defs>
+              <circle cx="32" cy="32" r="30" fill="url(#av-fundo)"/>
+              <g clip-path="url(#av-corte)" fill="#fff">
+                <circle cx="32" cy="25" r="10.5"/>
+                <path d="M12 58c0-12 9-20 20-20s20 8 20 20v8H12z"/>
+              </g>
+            </svg>
+          </span>
+          <span class="entrada-titulo-texto oculto">Primeiro acesso</span>
+        </div>
 
         <form id="form-login">
           <div class="campo"><label for="login">Usuário</label><input id="login" autocomplete="username" required placeholder="ex.: fabricio.alves"></div>

@@ -108,7 +108,8 @@ async function mostrarLogin() {
 }
 // Abas da entrada: Entrar / Cadastrar-se
 function trocarEntrada(qual) {
-  $('#entrada-titulo').textContent = qual === 'cadastro' ? 'Primeiro acesso' : 'Entrar';
+  $('.avatar-login').classList.toggle('oculto', qual === 'cadastro');
+  $('.entrada-titulo-texto').classList.toggle('oculto', qual !== 'cadastro');
   $('#form-login').classList.toggle('oculto', qual !== 'entrar');
   $('#form-cadastro').classList.toggle('oculto', qual !== 'cadastro');
   $('#erro-login').textContent = '';
