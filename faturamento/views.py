@@ -133,7 +133,7 @@ def entrar(request):
     nome_login = str(dados.get('login', '')).strip().lower()
     pendente = Usuario.objects.filter(username=nome_login, aguardando_liberacao=True).first()
     if pendente and pendente.check_password(str(dados.get('senha', ''))):
-        return erro('Seu cadastro está aguardando liberação da coordenação ou da supervisão.', 403)
+        return erro('Seu cadastro está aguardando a coordenação escolher o seu perfil. Você recebe acesso assim que ela liberar.', 403)
     if settings.FATURALE_MODO_DEMO:
         u = Usuario.objects.filter(username=nome_login, is_active=True).first()
     else:
@@ -145,7 +145,9 @@ def entrar(request):
 
 
 def cadastrar(request):
-    """Cadastro feito pela própria pessoa. Fica inativo até a coordenação/supervisão liberar."""
+    """Cadastro feito pela própria pessoa. Uma pergunta só: "Você é faturista?".
+    Sim: entra na hora, com o padrão de produção de faturista (Fatura).
+    Não: fica aguardando, e a coordenação/supervisão recebe o aviso para escolher o perfil."""
     if request.method != 'POST':
         return erro('Método não permitido.', 405)
     d = json.loads(request.body or '{}')
@@ -161,14 +163,23 @@ def cadastrar(request):
         return erro('A senha precisa de pelo menos 6 caracteres (e não pode ser 123456).')
     if senha != str(d.get('confirmacao') or ''):
         return erro('A confirmação não é igual à senha.')
-    if Usuario.objects.filter(username=login_).exists():
+    resposta = str(d.get('faturista') or '').strip().lower()
+    if resposta not in ('sim', 'nao'):
+        return erro('Responda se você é faturista.')
+    if Usuario.objects.filter(username__iexact=login_).exists():
         return erro('Esse usuário já existe. Escolha outro.', 409)
-    # Todo mundo entra em Fatura; a coordenação/supervisão muda a função se quiser
+    faturista = resposta == 'sim'
     u = Usuario(username=login_, first_name=nome, email=email, perfil='faturista', funcao='faturamento',
-                is_active=False, aguardando_liberacao=True, trocar_senha=False)
+                is_active=faturista, aguardando_liberacao=not faturista, trocar_senha=False)
     u.set_password(senha)
-    u.save()
-    return JsonResponse({'ok': True})
+    try:
+        u.save()
+    except IntegrityError:
+        return erro('Esse usuário já existe. Escolha outro.', 409)
+    if faturista:  # já entra com o padrão de produção de faturista
+        login(request, u, backend='django.contrib.auth.backends.ModelBackend')
+        return JsonResponse({**perfil_json(u), 'entrou': True})
+    return JsonResponse({'ok': True, 'aguardandoPerfil': True})
 
 
 def sair(request):
@@ -260,13 +271,28 @@ def liberar_cadastro(request, pk):
     return JsonResponse(usuario_json(alvo))
 
 
-@api('gestao', ('PUT',))
+@api('gestao', ('PUT', 'DELETE'))
 def usuario(request, pk):
     alvo = Usuario.objects.filter(pk=pk).first()
     if not alvo:
         return erro('Não encontrado.', 404)
     d = request.dados
     permitidos = perfis_que_pode_criar(request.user)
+    if request.method == 'DELETE':
+        # Coordenação (Thalita), supervisão (Larissa) e diretoria excluem cadastros
+        if request.user.perfil not in ('coordenadora', 'supervisora', 'diretor'):
+            return erro('Só a coordenação, a supervisão ou a diretoria excluem usuários.', 403)
+        if alvo == request.user:
+            return erro('Você não pode excluir o seu próprio usuário.')
+        if alvo.perfil not in permitidos:
+            return erro('Você não pode excluir esse usuário.', 403)
+        nome = alvo.nome
+        try:
+            alvo.delete()
+        except ProtectedError:
+            return erro(f'{nome} já tem produção (lotes ou XML) e não pode ser excluído(a), para não apagar os relatórios. '
+                        'Desative o acesso em vez de excluir (Editar → desmarcar "Usuário ativo").', 409)
+        return JsonResponse({'ok': True})
     if alvo.perfil not in permitidos or d.get('perfil') not in permitidos:
         return erro('Você não pode alterar esse usuário.', 403)
     if alvo == request.user and not d.get('ativo'):
@@ -1188,7 +1214,7 @@ def alertas(request):
     if u.pode('gestao'):
         novos = list(Usuario.objects.filter(aguardando_liberacao=True).order_by('date_joined').values_list('first_name', flat=True))
         if novos:
-            lista.insert(0, {'nivel': 'urgente', 'aba': 'gestao', 'titulo': f'{len(novos)} cadastro(s) aguardando liberação', 'itens': novos})
+            lista.insert(0, {'nivel': 'urgente', 'aba': 'gestao', 'titulo': f'{len(novos)} cadastro(s) aguardando escolha de perfil', 'itens': novos})
         abertas = list(DuvidaConvenio.objects.filter(resposta='').select_related('convenio').order_by('id')[:30])
         if abertas:
             lista.insert(0, {'nivel': 'atencao', 'aba': 'convenios', 'titulo': f'{len(abertas)} dúvida(s) sobre convênios para responder',

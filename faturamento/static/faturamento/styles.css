@@ -580,3 +580,9 @@ form.lancar button { width: 100%; padding: 10px; }
 .pm-acao { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; }
 .pm-acao span { font-size: 13.5px; min-width: 0; overflow-wrap: anywhere; }
 .pm-novo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; background: var(--azul-suave); border: 1px solid #c9dbff; border-radius: var(--raio); padding: 10px 14px; margin-bottom: 14px; color: var(--navy-700); font-weight: 600; }
+
+/* Cadastro: "Você é faturista?" */
+.pergunta-faturista { border: 1px solid rgba(255,255,255,.16); border-radius: 10px; padding: 10px 14px 12px; margin: 4px 0 14px; display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+.pergunta-faturista legend { padding: 0 6px; font-weight: 600; font-size: 13px; color: var(--prata, #c9d3e6); }
+.pergunta-faturista label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+.pergunta-faturista input { width: auto; accent-color: var(--azul, #2f6bff); }

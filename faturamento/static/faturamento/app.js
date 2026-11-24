@@ -119,13 +119,19 @@ $('#form-cadastro').addEventListener('submit', async (e) => {
   e.preventDefault();
   $('#erro-login').textContent = '';
   try {
-    await api('/api/cadastro', { method: 'POST', corpo: Object.fromEntries(new FormData(e.target)) });
+    const r = await api('/api/cadastro', { method: 'POST', corpo: Object.fromEntries(new FormData(e.target)) });
     const usuario = e.target.login.value;
     e.target.reset();
+    if (r.entrou) { // faturista: já entra
+      estado.usuario = r;
+      entrar();
+      avisar(`Bem-vindo(a), ${r.nome}! Seu usuário é ${r.login}.`);
+      return;
+    }
     trocarEntrada('entrar');
     $('#login').value = usuario;
     const ok = $('#ok-cadastro');
-    ok.textContent = 'Cadastro enviado! Assim que a coordenação ou a supervisão liberar, entre com o seu usuário e senha.';
+    ok.textContent = 'Cadastro enviado! A coordenação vai escolher o seu perfil. Assim que liberar, entre com o seu usuário e senha.';
     ok.classList.remove('oculto');
   } catch (err) { $('#erro-login').textContent = err.message; }
 });
@@ -1509,8 +1515,11 @@ async function gestaoUsuarios() {
   const usuarios = todos.filter((u) => !u.aguardando);
   // Quem pode dar qual perfil: diretoria todos; coordenação faturista e supervisora; supervisão faturista
   const perfis = { diretor: ['faturista', 'supervisora', 'coordenadora', 'diretor'], coordenadora: ['faturista', 'supervisora'] }[estado.usuario.perfil] || ['faturista'];
+  // Excluir: coordenação, supervisão e diretoria (nunca o próprio usuário)
+  const podeExcluir = (u) => ['coordenadora', 'supervisora', 'diretor'].includes(estado.usuario.perfil) && perfis.includes(u.perfil) && u.id !== estado.usuario.id;
   $('#sub').innerHTML = `${pendentes.length ? `<div class="cartao cadastros-pendentes">
-    <h2>Cadastros aguardando liberação <span class="chat-conta">${pendentes.length}</span></h2>
+    <h2>Cadastros aguardando escolha de perfil <span class="chat-conta">${pendentes.length}</span></h2>
+    <p class="apagado" style="margin:-4px 0 10px">Responderam que não são faturistas. Escolha o perfil e libere o acesso.</p>
     ${pendentes.map((u) => `<div class="pendente" data-id="${u.id}">
       <div><b>${esc(u.nome)}</b><small>usuário <b>${esc(u.login)}</b>${u.email ? ` · ${esc(u.email)}` : ''} · ${dataBR(u.criado_em.slice(0, 10))}</small></div>
       <label>Perfil <select data-perfil>${perfis.map((pf) => `<option value="${pf}">${PERFIS[pf]}</option>`).join('')}</select></label>
@@ -1522,7 +1531,7 @@ async function gestaoUsuarios() {
     <div class="tabela-caixa"><table><thead><tr><th>Nome</th><th>Login</th><th>Perfil</th><th>Função</th><th>Situação</th><th>Criado em</th><th></th></tr></thead>
     <tbody>${usuarios.map((u) => `<tr data-id="${u.id}"><td><b>${esc(u.nome)}</b></td><td>${esc(u.login)}</td><td>${PERFIS[u.perfil]}</td><td>${u.perfil === 'faturista' ? FUNCOES[u.funcao] : '—'}</td>
       <td><span class="selo ${u.ativo ? 'conferido' : 'devolvido'}">${u.ativo ? 'Ativo' : 'Inativo'}</span>${u.trocar_senha ? ' <span class="selo lancado" title="Ainda não criou a própria senha">senha inicial</span>' : ''}</td><td>${dataBR(u.criado_em.slice(0, 10))}</td>
-      <td><div class="acoes">${perfis.includes(u.perfil) ? '<button class="btn btn-claro btn-mini" data-editar>Editar</button>' : ''}</div></td></tr>`).join('')}</tbody></table></div></div>`;
+      <td><div class="acoes">${perfis.includes(u.perfil) ? '<button class="btn btn-claro btn-mini" data-editar>Editar</button>' : ''}${podeExcluir(u) ? '<button class="btn btn-perigo btn-mini" data-excluir>Excluir</button>' : ''}</div></td></tr>`).join('')}</tbody></table></div></div>`;
 
   $('.cadastros-pendentes')?.addEventListener('click', tentar(async (e) => {
     const linha = e.target.closest('.pendente');
@@ -1559,9 +1568,17 @@ async function gestaoUsuarios() {
       fechar(); avisar('Usuário criado.'); await carregarListas(); gestaoUsuarios();
     }));
   }));
-  $('#sub tbody').addEventListener('click', (e) => {
+  $('#sub tbody').addEventListener('click', tentar(async (e) => {
+    const linha = e.target.closest('tr');
+    if (e.target.closest('[data-excluir]')) {
+      const alvo = usuarios.find((x) => x.id === Number(linha.dataset.id));
+      if (!confirm(`Excluir o usuário ${alvo.nome} (${alvo.login})? Não dá para desfazer.`)) return;
+      await api(`/api/usuarios/${alvo.id}`, { method: 'DELETE' });
+      avisar(`${alvo.nome} excluído(a).`); await carregarListas(); gestaoUsuarios();
+      return;
+    }
     if (!e.target.closest('[data-editar]')) return;
-    const u = usuarios.find((x) => x.id === Number(e.target.closest('tr').dataset.id));
+    const u = usuarios.find((x) => x.id === Number(linha.dataset.id));
     modal(`<h2>Editar ${esc(u.nome)}</h2>${form(u)}`, (el, fechar) => {
       $('form', el).addEventListener('submit', tentar(async (ev) => {
         ev.preventDefault();
@@ -1570,7 +1587,7 @@ async function gestaoUsuarios() {
         fechar(); avisar('Usuário atualizado.'); await carregarListas(); gestaoUsuarios();
       }));
     });
-  });
+  }));
 }
 
 // ---------- Coordenação: convênios e responsáveis ----------

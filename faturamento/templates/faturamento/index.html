@@ -31,8 +31,13 @@
           <div class="campo"><label>E-mail</label><input name="email" type="email" maxlength="120" autocomplete="email"></div>
           <div class="campo"><label>Senha (mínimo 6)</label><input name="senha" type="password" minlength="6" required autocomplete="new-password"></div>
           <div class="campo"><label>Repita a senha</label><input name="confirmacao" type="password" minlength="6" required autocomplete="new-password"></div>
-          <button class="btn btn-primario" style="width:100%;justify-content:center">Enviar cadastro</button>
-          <p class="entrada-nota">Você entra na Fatura. A coordenação ou a supervisão libera o seu acesso e, se precisar, muda a sua função.</p>
+          <fieldset class="pergunta-faturista">
+            <legend>Você é faturista?</legend>
+            <label><input type="radio" name="faturista" value="sim" required> Sim</label>
+            <label><input type="radio" name="faturista" value="nao"> Não</label>
+          </fieldset>
+          <button class="btn btn-primario" style="width:100%;justify-content:center">Cadastrar</button>
+          <p class="entrada-nota">Faturista entra na hora. Se não for, a coordenação escolhe o seu perfil e libera o acesso.</p>
         </form>
         <p class="ok-login oculto" id="ok-cadastro"></p>
       </div>
