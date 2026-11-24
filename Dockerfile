@@ -20,4 +20,4 @@ RUN DJANGO_SECRET_KEY=build python manage.py collectstatic --noinput
 
 EXPOSE 8000
 # Aplica as migrações e sobe o servidor
-CMD ["sh", "-c", "python manage.py migrate --noinput && exec gunicorn config.wsgi --bind 0.0.0.0:8000 --workers 2 --threads 4 --timeout 120"]
+CMD ["sh", "-c", "python manage.py migrate --noinput && exec gunicorn config.wsgi --bind 0.0.0.0:8000 --workers 1 --threads 8 --timeout 180"]

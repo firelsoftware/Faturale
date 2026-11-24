@@ -1,26 +1,41 @@
 # Faturale no Fly.io, em São Paulo (perto do banco do Supabase).
 # Os segredos (DATABASE_URL, DJANGO_SECRET_KEY) ficam no Fly: fly secrets set ...
-app = 'faturale'
+app = 'faturale-firel'
 primary_region = 'gru'
 
 [build]
 
 [env]
-  DJANGO_ALLOWED_HOSTS = 'faturale.fly.dev'
-  DJANGO_CSRF_ORIGINS = 'https://faturale.fly.dev'
+  DJANGO_ALLOWED_HOSTS = 'faturale-firel.fly.dev,faturale.firelsoft.com.br,firelsoft.com.br,www.firelsoft.com.br'
+  DJANGO_CSRF_ORIGINS = 'https://faturale-firel.fly.dev,https://faturale.firelsoft.com.br'
+  FATURALE_ENDERECO = 'faturale.firelsoft.com.br'
+  FATURALE_REDIRECIONAR = 'firelsoft.com.br,www.firelsoft.com.br'
 
 [http_service]
   internal_port = 8000
   force_https = true
-  auto_stop_machines = 'stop'
+  auto_stop_machines = 'off'
   auto_start_machines = true
   min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = '30s'
+    interval = '30s'
+    method = 'GET'
+    path = '/'
+    timeout = '10s'
+    [http_service.checks.headers]
+      Host = 'faturale-firel.fly.dev'
+      X-Forwarded-Proto = 'https'
 
 # PDFs dos lotes e protocolos ficam num disco que não some a cada atualização
 [mounts]
   source = 'faturale_dados'
   destination = '/data'
 
+# Máquina pequena (cabe nos US$ 5 grátis); a memória extra (swap) segura o OCR quando precisa
+swap_size_mb = 1024
+
 [[vm]]
   size = 'shared-cpu-1x'
-  memory = '1gb'
+  memory = '512mb'

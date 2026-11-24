@@ -58,6 +58,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'faturamento.redirecionar.RedirecionarDominio',  # firelsoft.com.br -> faturale.firelsoft.com.br
     'whitenoise.middleware.WhiteNoiseMiddleware',  # serve app.js/styles.css no servidor
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -174,3 +175,7 @@ FATURALE_MODO_DEMO = os.environ.get('FATURALE_MODO_DEMO', '1') == '1'
 
 # Senha que a pessoa recebe ao ser cadastrada ou quando a gestão redefine. Ela troca no primeiro acesso.
 FATURALE_SENHA_INICIAL = os.environ.get('FATURALE_SENHA_INICIAL', '123456')
+
+# Endereço oficial do sistema e endereços que levam até ele (ex.: firelsoft.com.br sem o "faturale.")
+FATURALE_ENDERECO = os.environ.get('FATURALE_ENDERECO', '')
+FATURALE_REDIRECIONAR = [h for h in os.environ.get('FATURALE_REDIRECIONAR', '').split(',') if h]
