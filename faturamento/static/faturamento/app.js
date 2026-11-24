@@ -333,7 +333,9 @@ function montarChat() {
     <section id="chat" class="oculto" aria-label="Mensagens">
       <header><button class="chat-voltar oculto" title="Voltar">‹</button><b id="chat-titulo">Mensagens</b><button class="chat-fechar" title="Fechar">×</button></header>
       <div id="chat-corpo"></div>
-      <form id="chat-form" class="oculto"><textarea name="texto" rows="1" placeholder="Escreva uma mensagem…" maxlength="2000"></textarea><button class="btn btn-primario">Enviar</button></form>
+      <form id="chat-form" class="oculto"><div class="chat-anexo oculto" id="chat-anexo"></div>
+        <div class="chat-linha"><label class="chat-clipe" title="Anexar arquivo (até 20 MB)">📎<input type="file" name="arquivo" hidden accept=".pdf,.xml,.png,.jpg,.jpeg,.xlsx,.xls,.csv,.docx,.doc,.txt,.zip"></label>
+        <textarea name="texto" rows="1" placeholder="Escreva uma mensagem…" maxlength="2000"></textarea><button class="btn btn-primario">Enviar</button></div></form>
     </section>`);
   $('#chat-botao').addEventListener('click', () => { if (podePedirAvisos()) pedirAvisos(); chat.aberto ? fecharChat() : abrirChat(); });
   $('#chat .chat-fechar').addEventListener('click', fecharChat);
@@ -344,15 +346,38 @@ function montarChat() {
   });
   const form = $('#chat-form');
   form.texto.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); } });
+  const mostrarAnexo = () => {
+    const f = form.arquivo.files[0];
+    const caixa = $('#chat-anexo');
+    caixa.classList.toggle('oculto', !f);
+    caixa.innerHTML = f ? `📎 <b>${esc(f.name)}</b> <small>${tamanhoArquivo(f.size)}</small> <button type="button" class="chat-tirar" title="Tirar o anexo">×</button>` : '';
+  };
+  form.arquivo.addEventListener('change', () => {
+    const f = form.arquivo.files[0];
+    if (f && f.size > 20 * 1024 * 1024) { avisar('Arquivo grande demais (máximo 20 MB).', true); form.arquivo.value = ''; }
+    mostrarAnexo();
+  });
+  $('#chat-anexo').addEventListener('click', (e) => { if (e.target.closest('.chat-tirar')) { form.arquivo.value = ''; mostrarAnexo(); } });
   form.addEventListener('submit', tentar(async (e) => {
     e.preventDefault();
     const texto = form.texto.value.trim();
-    if (!texto) return;
+    const anexo = form.arquivo.files[0];
+    if (!texto && !anexo) return;
+    if (anexo) {
+      const fd = new FormData();
+      fd.append('com', chat.com); fd.append('texto', texto); fd.append('arquivo', anexo);
+      const botao = form.querySelector('.btn-primario');
+      botao.disabled = true; botao.textContent = 'Enviando…';
+      try { await api('/api/mensagens', { method: 'POST', body: fd }); } finally { botao.disabled = false; botao.textContent = 'Enviar'; }
+      form.arquivo.value = ''; mostrarAnexo();
+    } else {
+      await api('/api/mensagens', { method: 'POST', corpo: { com: chat.com, texto } });
+    }
     form.texto.value = '';
-    await api('/api/mensagens', { method: 'POST', corpo: { com: chat.com, texto } });
     await buscarNovas();
   }));
 }
+const tamanhoArquivo = (n) => (n >= 1048576 ? `${(n / 1048576).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 function mostrarBotaoChat(sim) { montarChat(); $('#chat-botao').classList.toggle('oculto', !sim); if (!sim) fecharChat(); }
 async function contarNaoLidas() {
   if (!estado.usuario || estado.usuario.trocarSenha || estado.usuario.publico) return;
@@ -453,7 +478,9 @@ async function buscarNovas() {
     const embaixo = caixa.scrollHeight - caixa.scrollTop - caixa.clientHeight < 60;
     caixa.insertAdjacentHTML('beforeend', novas.map((m) => `<div class="msg ${m.minha ? 'minha' : ''}">
       ${!m.minha && chat.com === 'equipe' ? `<small class="msg-autor">${esc(m.autor)}</small>` : ''}
-      <div class="msg-texto">${esc(m.texto).replace(/\n/g, '<br>')}</div><small class="msg-hora">${horaMsg(m.criado_em)}</small></div>`).join(''));
+      ${m.texto ? `<div class="msg-texto">${esc(m.texto).replace(/\n/g, '<br>')}</div>` : ''}
+      ${m.arquivo ? `<a class="msg-arquivo" href="/api/mensagens/${m.id}/arquivo" target="_blank" rel="noopener" download="${esc(m.arquivo.nome)}">📎 <span>${esc(m.arquivo.nome)}</span><small>${tamanhoArquivo(m.arquivo.tamanho)} · baixar</small></a>` : ''}
+      <small class="msg-hora">${horaMsg(m.criado_em)}</small></div>`).join(''));
     chat.ultimo = novas.at(-1).id;
     if (embaixo || novas.some((m) => m.minha) || novas.length === caixa.children.length) caixa.scrollTop = caixa.scrollHeight;
     contarNaoLidas();

@@ -1392,7 +1392,22 @@ def versao(request):
 # ---------- Mensagens entre a equipe ----------
 def mensagem_json(m, u):
     return {'id': m.id, 'autor': m.autor.nome, 'autor_id': m.autor_id, 'minha': m.autor_id == u.id,
-            'texto': m.texto, 'criado_em': timezone.localtime(m.criado_em).isoformat(timespec='seconds')}
+            'texto': m.texto, 'criado_em': timezone.localtime(m.criado_em).isoformat(timespec='seconds'),
+            'arquivo': {'nome': m.nome_arquivo, 'tamanho': m.tamanho_arquivo} if m.arquivo else None}
+
+
+# Anexos do chat: tipos de trabalho do dia a dia (nada que rode no navegador, como .html ou .js)
+EXTENSOES_CHAT = {'.pdf', '.xml', '.png', '.jpg', '.jpeg', '.xlsx', '.xls', '.csv', '.docx', '.doc', '.txt', '.zip'}
+
+
+@api()
+def mensagem_arquivo(request, pk):
+    """Baixa o anexo: só quem participa da conversa (as duas pessoas, ou qualquer um na Equipe toda)."""
+    u = request.user
+    m = Mensagem.objects.filter(pk=pk).filter(Q(destinatario__isnull=True) | Q(autor=u) | Q(destinatario=u)).first()
+    if not m or not m.arquivo:
+        return erro('Arquivo não encontrado.', 404)
+    return servir_arquivo(m.arquivo, m.nome_arquivo)
 
 
 def conversa_qs(u, com):
@@ -1441,14 +1456,24 @@ def mensagens_conversas(request):
 
 @api(None, ('GET', 'POST'))
 def mensagens(request):
-    u, com = request.user, (request.GET.get('com') or request.dados.get('com') or 'equipe')
+    u, com = request.user, (request.GET.get('com') or request.dados.get('com') or request.POST.get('com') or 'equipe')
     if com != 'equipe' and not (str(com).isdigit() and Usuario.objects.filter(id=int(com), is_active=True).exclude(id=u.id).exists()):
         return erro('Conversa não encontrada.', 404)
     if request.method == 'POST':
-        texto = str(request.dados.get('texto') or '').strip()
-        if not texto:
+        texto = str(request.dados.get('texto') or request.POST.get('texto') or '').strip()
+        anexo = request.FILES.get('arquivo')
+        if not texto and not anexo:
             return erro('Escreva a mensagem.')
-        m = Mensagem.objects.create(autor=u, destinatario=None if com == 'equipe' else Usuario.objects.get(id=int(com)), texto=texto[:2000])
+        m = Mensagem(autor=u, destinatario=None if com == 'equipe' else Usuario.objects.get(id=int(com)), texto=texto[:2000])
+        if anexo:
+            ext = Path(anexo.name).suffix.lower()
+            if ext not in EXTENSOES_CHAT:
+                return erro('Tipo de arquivo não aceito. Envie PDF, XML, imagem, planilha, Word, CSV, TXT ou ZIP.')
+            if anexo.size > 20 * 1024 * 1024:
+                return erro('Arquivo grande demais (máximo 20 MB).')
+            m.nome_arquivo, m.tamanho_arquivo = nome_seguro(anexo.name), anexo.size
+            m.arquivo.save(f'msg{ext}', anexo, save=False)
+        m.save()
         return JsonResponse(mensagem_json(m, u))
     qs = conversa_qs(u, com).select_related('autor')
     depois = request.GET.get('depois')

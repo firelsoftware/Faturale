@@ -8,7 +8,7 @@ from django.core.cache import cache
 from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
 
-from .models import Convenio, EnvioXml, Lote, Usuario
+from .models import Convenio, EnvioXml, Lote, Mensagem, Usuario
 
 
 @override_settings(FATURALE_MODO_DEMO=False)
@@ -316,3 +316,50 @@ class AssumirPerfilReservadoTests(TestCase):
     def test_sem_sim_nao_reivindica(self):
         self.cadastrar('')
         self.assertIsNone(Usuario.objects.get(username='thalita.souza').reivindica)
+
+
+@override_settings(FATURALE_MODO_DEMO=False, MEDIA_ROOT=tempfile.mkdtemp(prefix='faturale-chat-'))
+class AnexoChatTests(TestCase):
+    def setUp(self):
+        mk = lambda login: Usuario.objects.create_user(login, password='Senha-Forte-123', first_name=login.title(),
+                                                        perfil='faturista', trocar_senha=False)
+        self.ana, self.bia, self.caio = mk('ana.souza'), mk('bia.lima'), mk('caio.reis')
+
+    def enviar(self, com, nome, conteudo=b'%PDF-1.4 teste', texto=''):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return self.client.post('/api/mensagens', {'com': com, 'texto': texto, 'arquivo': SimpleUploadedFile(nome, conteudo)})
+
+    def test_destinatario_baixa_e_terceiro_nao(self):
+        self.client.force_login(self.ana)
+        r = self.enviar(self.bia.id, 'protocolo 365118.pdf', texto='segue o protocolo')
+        self.assertEqual(r.status_code, 200)
+        m = r.json()
+        self.assertEqual(m['arquivo']['nome'], 'protocolo 365118.pdf')
+        self.client.force_login(self.bia)
+        conversa = self.client.get('/api/mensagens', {'com': self.ana.id}).json()
+        self.assertEqual(conversa[0]['arquivo']['nome'], 'protocolo 365118.pdf')
+        baixa = self.client.get(f"/api/mensagens/{m['id']}/arquivo")
+        self.assertEqual(baixa.status_code, 200)
+        self.assertEqual(b''.join(baixa.streaming_content), b'%PDF-1.4 teste')
+        baixa.close()
+        self.client.force_login(self.caio)  # não participa da conversa
+        self.assertEqual(self.client.get(f"/api/mensagens/{m['id']}/arquivo").status_code, 404)
+
+    def test_equipe_toda_todos_baixam(self):
+        self.client.force_login(self.ana)
+        m = self.enviar('equipe', 'planilha.xlsx', b'PK\x03\x04').json()
+        self.client.force_login(self.caio)
+        r = self.client.get(f"/api/mensagens/{m['id']}/arquivo")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r['Content-Disposition'].startswith('attachment'))  # planilha baixa, não abre como página
+        r.close()
+
+    def test_tipo_perigoso_recusado(self):
+        self.client.force_login(self.ana)
+        for nome in ('pagina.html', 'script.js', 'programa.exe', 'atalho.svg'):
+            self.assertEqual(self.enviar(self.bia.id, nome, b'<script>alert(1)</script>').status_code, 400, nome)
+        self.assertFalse(Mensagem.objects.exists())
+
+    def test_so_anexo_sem_texto_vale(self):
+        self.client.force_login(self.ana)
+        self.assertEqual(self.enviar(self.bia.id, 'foto.png', b'\x89PNG').status_code, 200)

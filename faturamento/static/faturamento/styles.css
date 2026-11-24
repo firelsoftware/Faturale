@@ -402,7 +402,17 @@ body:has(.faixa-demo) #chat { bottom: 128px; height: min(520px, calc(100vh - 150
 .msg.minha .msg-texto { background: var(--azul); color: #fff; border-color: var(--azul); border-radius: 12px 12px 4px 12px; }
 .msg-autor { font-size: 11px; font-weight: 700; color: var(--azul); padding-left: 4px; }
 .msg-hora { font-size: 10.5px; color: var(--texto-2); padding: 0 4px; }
-#chat-form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--borda); background: #fff; }
+#chat-form { display: flex; flex-direction: column; gap: 6px; padding: 10px; border-top: 1px solid var(--borda); background: #fff; }
+#chat-form .chat-linha { display: flex; gap: 8px; align-items: flex-end; }
+.chat-clipe { cursor: pointer; font-size: 20px; padding: 6px 4px; line-height: 1; user-select: none; }
+.chat-anexo { display: flex; align-items: center; gap: 6px; background: var(--azul-suave, #eef3ff); border-radius: 8px; padding: 6px 10px; font-size: 13px; min-width: 0; }
+.chat-anexo b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-anexo small { color: var(--texto-2); }
+.chat-tirar { margin-left: auto; background: none; border: 0; font-size: 18px; cursor: pointer; color: var(--texto-2); }
+.msg-arquivo { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; padding: 8px 10px; border-radius: 8px; background: rgba(0, 0, 0, .06); color: inherit; text-decoration: none; max-width: 260px; }
+.msg-arquivo span { font-weight: 600; overflow-wrap: anywhere; }
+.msg-arquivo small { opacity: .75; font-size: 11.5px; }
+.msg.minha .msg-arquivo { background: rgba(255, 255, 255, .18); }
 #chat-form textarea { resize: none; flex: 1; max-height: 100px; }
 @media (max-width: 760px) {
   #chat { left: 8px; right: 8px; width: auto; bottom: 76px; height: calc(100vh - 160px); }

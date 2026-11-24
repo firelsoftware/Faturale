@@ -41,6 +41,7 @@ urlpatterns = [
     path('api/alertas', v.alertas),
     path('api/versao', v.versao),
     path('api/mensagens', v.mensagens),
+    path('api/mensagens/<int:pk>/arquivo', v.mensagem_arquivo),
     path('api/mensagens/conversas', v.mensagens_conversas),
     path('api/mensagens/resumo', v.mensagens_resumo),
     path('api/calendario', v.calendario),

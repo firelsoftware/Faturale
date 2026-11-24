@@ -249,9 +249,13 @@ class Mensagem(models.Model):
     """Conversa entre a equipe. Sem destinatário = "Equipe toda"."""
     autor = models.ForeignKey(Usuario, models.CASCADE, related_name='mensagens_enviadas')
     destinatario = models.ForeignKey(Usuario, models.CASCADE, null=True, blank=True, related_name='mensagens_recebidas')
-    texto = models.TextField(max_length=2000)
+    texto = models.TextField(max_length=2000, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
     lida_em = models.DateTimeField(null=True, blank=True)  # só nas conversas individuais
+    # Arquivo anexado (só quem participa da conversa baixa)
+    arquivo = models.FileField(upload_to='mensagens/', blank=True)
+    nome_arquivo = models.CharField(max_length=200, blank=True)
+    tamanho_arquivo = models.PositiveIntegerField(default=0)
 
     class Meta:
         ordering = ['id']
