@@ -113,9 +113,9 @@ class CadastroTests(TestCase):
         # o sistema avisa e sugere outro sobrenome livre
         r = self.client.get('/api/cadastro/usuario', {'login': 'fabricio.alves', 'nome': 'Fabrício da Silva Alves'}).json()
         self.assertEqual(r, {'livre': False, 'sugestao': 'fabricio.silva'})
-        # sem outro sobrenome: fabricio.alves2
+        # só um sobrenome: não inventa número, a pessoa digita outro sobrenome dela
         r = self.client.get('/api/cadastro/usuario', {'login': 'fabricio.alves', 'nome': 'Fabrício Alves'}).json()
-        self.assertEqual(r['sugestao'], 'fabricio.alves2')
+        self.assertEqual(r, {'livre': False, 'sugestao': ''})
         self.assertTrue(self.client.get('/api/cadastro/usuario', {'login': 'fabricio.silva'}).json()['livre'])
         # cadastrar com o usuário repetido é recusado com a sugestão
         r = self.post('/api/cadastro', {'nome': 'Fabrício Silva Alves', 'login': 'fabricio.alves', 'senha': 'abc123x',

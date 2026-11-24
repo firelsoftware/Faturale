@@ -170,7 +170,8 @@ def cadastrar(request):
         return erro('Responda se você é faturista.')
     if not usuario_livre(login_):
         sugestao = sugerir_usuario(nome, login_)
-        return erro(f'O usuário {login_} já existe.' + (f' Use {sugestao}.' if sugestao else ' Escolha outro.'), 409)
+        return erro(f'O usuário {login_} já existe.' + (f' Use {sugestao}.' if sugestao
+                    else ' Use outro sobrenome seu (ex.: fabricio.silva).'), 409)
     faturista = resposta == 'sim'
     u = Usuario(username=login_, first_name=nome, email=email, perfil='faturista', funcao='faturamento',
                 is_active=faturista, aguardando_liberacao=not faturista, trocar_senha=False)
@@ -200,14 +201,13 @@ def usuario_livre(login_):
 
 
 def sugerir_usuario(nome, ocupado=''):
-    """Primeiro nome + sobrenome livre: fabricio.alves; se já existe, fabricio.silva; depois fabricio.alves2..."""
+    """Primeiro nome + um sobrenome livre (Fabrício Silva Alves: fabricio.alves; se já existe, fabricio.silva).
+    Se a pessoa só escreveu um sobrenome, não inventa número: ela digita o usuário com outro sobrenome dela."""
     partes = partes_do_nome(nome)
-    if not partes:
+    if len(partes) < 2:
         return ''
-    primeiro, sobrenomes = partes[0], partes[1:] or ['']
-    candidatos = [f'{primeiro}.{s}' if s else primeiro for s in reversed(sobrenomes)]
-    base = candidatos[0]
-    candidatos += [f'{base}{n}' for n in range(2, 100)]
+    primeiro, sobrenomes = partes[0], partes[1:]
+    candidatos = [f'{primeiro}.{s}' for s in reversed(sobrenomes)]
     return next((c[:30] for c in candidatos if c != ocupado and re.fullmatch(r'[a-z0-9]+(\.[a-z0-9]+)+', c[:30])
                  and usuario_livre(c[:30])), '')
 

@@ -138,7 +138,7 @@ const conferirUsuario = () => {
       login.value = r.sugestao;
       aviso.textContent = `${valor} já existe. Sugerimos ${r.sugestao} (pode trocar).`;
     } else {
-      aviso.textContent = `${valor} já existe.${r.sugestao ? ` Sugestão: ${r.sugestao}` : ' Escolha outro.'}`;
+      aviso.textContent = `${valor} já existe.${r.sugestao ? ` Sugestão: ${r.sugestao}` : ' Digite o usuário com outro sobrenome seu (ex.: fabricio.silva). O nome continua o mesmo.'}`;
     }
   }, 350);
 };
