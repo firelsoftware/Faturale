@@ -149,6 +149,9 @@ class Lote(models.Model):
     tipo = models.CharField(max_length=60, blank=True)
     prestador = models.CharField(max_length=160, blank=True)
     unidade = models.CharField(max_length=80, blank=True)  # hospital/unidade (ex.: DF Star)
+    # Planilha de produção: contas analisadas = qtd_guias; contas separadas e status da análise
+    contas_separadas = models.PositiveIntegerField(default=0)
+    situacao = models.CharField(max_length=60, blank=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.LANCADO)
     observacao = models.TextField(blank=True)
     arquivo = models.FileField(upload_to='lotes/', blank=True)

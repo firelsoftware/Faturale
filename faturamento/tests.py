@@ -100,9 +100,10 @@ class CadastroTests(TestCase):
         c = Convenio.objects.create(nome='Bradesco')
         fat = Usuario.objects.create_user('fabricio.alves', password='x', perfil='faturista', first_name='Fabrício Alves', trocar_senha=False)
         self.client.force_login(fat)
-        r = self.post('/api/lotes', {'numeroLote': '365118', 'convenioId': c.id, 'qtdGuias': 0, 'valorTotal': 0, 'unidade': 'DF Star',
+        r = self.post('/api/lotes', {'numeroLote': '365118', 'convenioId': c.id, 'qtdGuias': 10, 'contasSeparadas': 2, 'situacao': 'Concluído', 'valorTotal': 0, 'unidade': 'DF Star',
                                      'competencia': '2026-11', 'dataLancamento': '2026-11-24', 'faturistaId': fat.id})
         self.assertEqual(r.status_code, 200, r.content)
         l = Lote.objects.get(numero_lote='365118')
         self.assertEqual((l.unidade, l.faturista, float(l.valor_total)), ('DF Star', fat, 0.0))
         self.assertEqual(self.client.get('/api/lotes').json()[0]['unidade'], 'DF Star')
+        self.assertEqual((l.qtd_guias, l.contas_separadas, l.situacao), (10, 2, 'Concluído'))

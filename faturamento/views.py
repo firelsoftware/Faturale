@@ -506,7 +506,7 @@ def lote_json(l):
         'faturista_id': l.faturista_id, 'faturista': l.faturista.nome, 'qtd_guias': l.qtd_guias,
         'guias_texto': l.guias_texto, 'valor_total': float(l.valor_total), 'competencia': l.competencia,
         'periodo_inicio': iso(l.periodo_inicio), 'periodo_fim': iso(l.periodo_fim), 'tipo': l.tipo,
-        'prestador': l.prestador, 'unidade': l.unidade, 'status': l.status, 'observacao': l.observacao, 'arquivo': bool(l.arquivo),
+        'prestador': l.prestador, 'unidade': l.unidade, 'contas_separadas': l.contas_separadas, 'situacao': l.situacao, 'status': l.status, 'observacao': l.observacao, 'arquivo': bool(l.arquivo),
         'data_lancamento': iso(l.data_lancamento), 'demo': l.demo, 'xml': xml,
         'gerado_por': l.gerado_por, 'lancado_por': l.lancado_por.nome if l.lancado_por else None,
         'valor_convenio': float(v) if (v := divergencia(l)) is not None else None,
@@ -606,6 +606,10 @@ def preencher_lote(l, d):
     l.valor_total = Decimal(str(d.get('valorTotal') or 0)).quantize(Decimal('0.01'))
     if 'unidade' in d:
         l.unidade = str(d.get('unidade') or '').strip()[:80]
+    if 'contasSeparadas' in d:
+        l.contas_separadas = max(0, int(d.get('contasSeparadas') or 0))
+    if 'situacao' in d:
+        l.situacao = str(d.get('situacao') or '').strip()[:60]
     l.competencia = d['competencia']
     l.data_lancamento = para_data(d['dataLancamento'])
     l.periodo_inicio = para_data(d.get('periodoInicio'))
