@@ -15,6 +15,7 @@ urlpatterns = [
     path('api/entrar', v.entrar),
     path('api/sair', v.sair),
     path('api/cadastro', v.cadastrar),
+    path('api/cadastro/usuario', v.cadastro_usuario),
     path('api/eu', v.eu),
     path('api/senha', v.trocar_senha),
     path('api/pessoas', v.pessoas),

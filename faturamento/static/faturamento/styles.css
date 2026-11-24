@@ -600,3 +600,8 @@ form.lancar button { width: 100%; padding: 10px; }
 .avatar-login { display: block; width: 76px; height: 76px; border-radius: 50%; padding: 4px; background: rgba(255, 255, 255, .08);
   box-shadow: 0 8px 22px rgba(47, 107, 255, .35), inset 0 0 0 1px rgba(255, 255, 255, .14); }
 .avatar-login svg { width: 100%; height: 100%; display: block; }
+
+/* Cadastro: usuário livre / já existe */
+.usuario-aviso { display: block; margin-top: 5px; font-size: 12.5px; font-weight: 600; }
+.usuario-aviso.ok { color: #6ee7a8; }
+.usuario-aviso.ocupado { color: #ffd166; }

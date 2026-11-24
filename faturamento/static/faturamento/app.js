@@ -120,10 +120,33 @@ const sugerirUsuario = (nome) => {
   const partes = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean);
   return partes.length >= 2 ? `${partes[0]}.${partes[partes.length - 1]}` : partes[0] || '';
 };
-$('#form-cadastro [name=login]').addEventListener('input', (e) => { e.target.dataset.mexeu = '1'; });
+// Confere se o usuário está livre; se não, mostra o aviso e já coloca a sugestão (ex.: fabricio.silva)
+let conferirUsuarioTimer = null;
+const conferirUsuario = () => {
+  clearTimeout(conferirUsuarioTimer);
+  conferirUsuarioTimer = setTimeout(async () => {
+    const login = $('#form-cadastro [name=login]');
+    const aviso = $('#usuario-aviso');
+    const valor = login.value.trim().toLowerCase();
+    if (!/^[a-z0-9]+(\.[a-z0-9]+)+$/.test(valor)) { aviso.classList.add('oculto'); return; }
+    let r;
+    try { r = await (await fetch(`/api/cadastro/usuario?${qs({ login: valor, nome: $('#form-cadastro [name=nome]').value })}`)).json(); } catch { return; }
+    if (login.value.trim().toLowerCase() !== valor) return; // a pessoa já mudou
+    if (r.livre) { aviso.className = 'usuario-aviso ok'; aviso.textContent = `✓ ${valor} está livre`; return; }
+    aviso.className = 'usuario-aviso ocupado';
+    if (r.sugestao && !login.dataset.mexeu) {
+      login.value = r.sugestao;
+      aviso.textContent = `${valor} já existe. Sugerimos ${r.sugestao} (pode trocar).`;
+    } else {
+      aviso.textContent = `${valor} já existe.${r.sugestao ? ` Sugestão: ${r.sugestao}` : ' Escolha outro.'}`;
+    }
+  }, 350);
+};
+$('#form-cadastro [name=login]').addEventListener('input', (e) => { e.target.dataset.mexeu = '1'; conferirUsuario(); });
 $('#form-cadastro [name=nome]').addEventListener('input', (e) => {
   const login = $('#form-cadastro [name=login]');
   if (!login.dataset.mexeu) login.value = sugerirUsuario(e.target.value);
+  conferirUsuario();
 });
 $('#form-cadastro').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -133,6 +156,7 @@ $('#form-cadastro').addEventListener('submit', async (e) => {
     const usuario = e.target.login.value;
     e.target.reset();
     delete e.target.login.dataset.mexeu;
+    $('#usuario-aviso').className = 'usuario-aviso oculto';
     if (r.entrou) { // faturista: já entra
       estado.usuario = r;
       entrar();

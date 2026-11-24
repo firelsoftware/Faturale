@@ -107,3 +107,23 @@ class CadastroTests(TestCase):
         self.assertEqual((l.unidade, l.faturista, float(l.valor_total)), ('DF Star', fat, 0.0))
         self.assertEqual(self.client.get('/api/lotes').json()[0]['unidade'], 'DF Star')
         self.assertEqual((l.qtd_guias, l.contas_separadas, l.situacao), (10, 2, 'Concluído'))
+
+    def test_nome_repete_mas_usuario_nao(self):
+        Usuario.objects.create_user('fabricio.alves', password='x', first_name='Fabrício Alves', perfil='faturista')
+        # o sistema avisa e sugere outro sobrenome livre
+        r = self.client.get('/api/cadastro/usuario', {'login': 'fabricio.alves', 'nome': 'Fabrício da Silva Alves'}).json()
+        self.assertEqual(r, {'livre': False, 'sugestao': 'fabricio.silva'})
+        # sem outro sobrenome: fabricio.alves2
+        r = self.client.get('/api/cadastro/usuario', {'login': 'fabricio.alves', 'nome': 'Fabrício Alves'}).json()
+        self.assertEqual(r['sugestao'], 'fabricio.alves2')
+        self.assertTrue(self.client.get('/api/cadastro/usuario', {'login': 'fabricio.silva'}).json()['livre'])
+        # cadastrar com o usuário repetido é recusado com a sugestão
+        r = self.post('/api/cadastro', {'nome': 'Fabrício Silva Alves', 'login': 'fabricio.alves', 'senha': 'abc123x',
+                                        'confirmacao': 'abc123x', 'faturista': 'sim'})
+        self.assertEqual(r.status_code, 409)
+        self.assertIn('fabricio.silva', r.json()['erro'])
+        # o mesmo nome de exibição com outro usuário entra normalmente
+        r = self.post('/api/cadastro', {'nome': 'Fabrício Alves', 'login': 'fabricio.silva', 'senha': 'abc123x',
+                                        'confirmacao': 'abc123x', 'faturista': 'sim'})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(Usuario.objects.filter(first_name='Fabrício Alves').count(), 2)

@@ -168,8 +168,9 @@ def cadastrar(request):
     resposta = str(d.get('faturista') or '').strip().lower()
     if resposta not in ('sim', 'nao'):
         return erro('Responda se você é faturista.')
-    if Usuario.objects.filter(username__iexact=login_).exists():
-        return erro('Esse usuário já existe. Escolha outro.', 409)
+    if not usuario_livre(login_):
+        sugestao = sugerir_usuario(nome, login_)
+        return erro(f'O usuário {login_} já existe.' + (f' Use {sugestao}.' if sugestao else ' Escolha outro.'), 409)
     faturista = resposta == 'sim'
     u = Usuario(username=login_, first_name=nome, email=email, perfil='faturista', funcao='faturamento',
                 is_active=faturista, aguardando_liberacao=not faturista, trocar_senha=False)
@@ -182,6 +183,41 @@ def cadastrar(request):
         login(request, u, backend='django.contrib.auth.backends.ModelBackend')
         return JsonResponse({**perfil_json(u), 'entrou': True})
     return JsonResponse({'ok': True, 'aguardandoPerfil': True})
+
+
+LIGACOES_NOME = {'de', 'da', 'do', 'das', 'dos', 'e'}
+
+
+def partes_do_nome(nome):
+    """'Fabrício da Silva Alves' -> ['fabricio', 'silva', 'alves'] (sem acento, sem 'da/de/dos')."""
+    import unicodedata
+    t = unicodedata.normalize('NFD', nome or '').encode('ascii', 'ignore').decode().lower()
+    return [p for p in re.sub(r'[^a-z0-9\s]', ' ', t).split() if p not in LIGACOES_NOME]
+
+
+def usuario_livre(login_):
+    return not Usuario.objects.filter(username__iexact=login_).exists()
+
+
+def sugerir_usuario(nome, ocupado=''):
+    """Primeiro nome + sobrenome livre: fabricio.alves; se já existe, fabricio.silva; depois fabricio.alves2..."""
+    partes = partes_do_nome(nome)
+    if not partes:
+        return ''
+    primeiro, sobrenomes = partes[0], partes[1:] or ['']
+    candidatos = [f'{primeiro}.{s}' if s else primeiro for s in reversed(sobrenomes)]
+    base = candidatos[0]
+    candidatos += [f'{base}{n}' for n in range(2, 100)]
+    return next((c[:30] for c in candidatos if c != ocupado and re.fullmatch(r'[a-z0-9]+(\.[a-z0-9]+)+', c[:30])
+                 and usuario_livre(c[:30])), '')
+
+
+def cadastro_usuario(request):
+    """Confere, durante o cadastro, se o usuário está livre e sugere outro (o nome pode repetir; o usuário não)."""
+    login_ = str(request.GET.get('login') or '').strip().lower()
+    nome = str(request.GET.get('nome') or '')
+    livre = bool(login_) and usuario_livre(login_)
+    return JsonResponse({'livre': livre, 'sugestao': '' if livre else sugerir_usuario(nome, login_)})
 
 
 def sair(request):
