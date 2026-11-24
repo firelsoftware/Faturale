@@ -133,3 +133,47 @@ class CadastroTests(TestCase):
                                         'confirmacao': 'Faturale#2026x', 'faturista': 'sim'})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(Usuario.objects.filter(first_name='Fabrício Alves').count(), 2)
+
+
+@override_settings(FATURALE_MODO_DEMO=False)
+class ConversasTests(TestCase):
+    """Chat: mensagem direta, Equipe toda, não lidas e privacidade entre colegas."""
+
+    def setUp(self):
+        mk = lambda login: Usuario.objects.create_user(login, password='Senha-Forte-123', first_name=login.title(),
+                                                        perfil='faturista', trocar_senha=False)
+        self.ana, self.bia, self.caio = mk('ana.souza'), mk('bia.lima'), mk('caio.reis')
+
+    def post(self, dados):
+        return self.client.post('/api/mensagens', json.dumps(dados), content_type='application/json')
+
+    def test_mensagem_direta_chega_avisa_e_fica_lida(self):
+        self.client.force_login(self.ana)
+        self.assertEqual(self.post({'com': self.bia.id, 'texto': 'Oi Bia, o lote 365118 subiu?'}).status_code, 200)
+        self.client.force_login(self.bia)
+        resumo = self.client.get('/api/mensagens/resumo').json()
+        self.assertEqual(resumo['naoLidas'], 1)
+        self.assertEqual(resumo['ultima']['texto'], 'Oi Bia, o lote 365118 subiu?')
+        conversa = self.client.get('/api/mensagens', {'com': self.ana.id}).json()
+        self.assertEqual([m['texto'] for m in conversa], ['Oi Bia, o lote 365118 subiu?'])
+        self.assertEqual(self.client.get('/api/mensagens/resumo').json()['naoLidas'], 0)  # abriu: ficou lida
+        # Caio não vê a conversa das duas
+        self.client.force_login(self.caio)
+        self.assertEqual(self.client.get('/api/mensagens', {'com': self.ana.id}).json(), [])
+        self.assertEqual(self.client.get('/api/mensagens/resumo').json()['naoLidas'], 0)
+
+    def test_equipe_toda_chega_para_todos(self):
+        self.client.force_login(self.ana)
+        self.post({'com': 'equipe', 'texto': 'Bom dia, equipe!'})
+        for p in (self.bia, self.caio):
+            self.client.force_login(p)
+            self.assertEqual(self.client.get('/api/mensagens/resumo').json()['naoLidas'], 1)
+            conversas = self.client.get('/api/mensagens/conversas').json()
+            self.assertEqual(conversas[0]['nome'], 'Equipe toda')
+            self.assertEqual(conversas[0]['ultima']['texto'], 'Bom dia, equipe!')
+
+    def test_mensagem_vazia_e_conversa_inexistente(self):
+        self.client.force_login(self.ana)
+        self.assertEqual(self.post({'com': self.bia.id, 'texto': '   '}).status_code, 400)
+        self.assertEqual(self.post({'com': 99999, 'texto': 'oi'}).status_code, 404)
+        self.assertEqual(self.post({'com': self.ana.id, 'texto': 'eu mesma'}).status_code, 404)
