@@ -21,6 +21,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 
 from .extrator import extrair_lote, ler_protocolo_xml
+from .seguranca import contar, excedeu, ip_do_cliente, log, senha_temporaria, zerar
 from .management.commands.semear import normalizar
 from .models import Convenio, DuvidaConvenio, EntregaCalendario, EnvioXml, Feriado, Lote, Mensagem, Usuario
 
@@ -91,6 +92,39 @@ def guardar_pendente(arquivo):
     return token, dados
 
 
+TIPOS_EM_TELA = {'.pdf': 'application/pdf', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg'}
+
+
+def nome_seguro(nome):
+    """Só o nome do arquivo (sem pasta), sem caracteres de controle."""
+    return re.sub(r'[^\w.\- ()]', '_', Path(str(nome or '')).name)[:200]
+
+
+def servir_arquivo(campo, nome=''):
+    """O tipo vem da extensão do arquivo guardado. PDF e imagem abrem na tela; o resto (ex.: XML) só baixa,
+    para um arquivo enviado não rodar script dentro do sistema."""
+    ext = Path(campo.name).suffix.lower()
+    nome = nome_seguro(nome) or Path(campo.name).name
+    if not nome.lower().endswith(ext):
+        nome += ext
+    tipo = TIPOS_EM_TELA.get(ext)
+    resp = FileResponse(campo.open('rb'), as_attachment=tipo is None, filename=nome,
+                        content_type=tipo or 'application/octet-stream')
+    resp['Content-Security-Policy'] = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox"
+    return resp
+
+
+def senha_fraca(senha, usuario):
+    """Política de senha do Django (mínimo 8, não pode ser comum, só números ou parecida com o nome)."""
+    from django.contrib.auth.password_validation import validate_password
+    from django.core.exceptions import ValidationError
+    try:
+        validate_password(senha, usuario)
+    except ValidationError as e:
+        return ' '.join(e.messages)
+    return None
+
+
 def pegar_pendente(token):
     if not token or not re.fullmatch(r'[0-9a-f]{24}', token):
         return None
@@ -119,18 +153,19 @@ def perfil_json(u):
 
 
 # ---------- Entrar / sair ----------
-def entrar_pessoas(request):
-    """Quem aparece na tela de entrada. Fora do modo demonstração, clicar na pessoa pede a senha."""
-    pessoas = Usuario.objects.filter(is_active=True).order_by('id')
-    sem_senha = settings.FATURALE_MODO_DEMO
-    return JsonResponse([{'nome': u.nome, 'login': u.username, 'perfil': u.perfil, 'semSenha': sem_senha} for u in pessoas], safe=False)
-
-
 def entrar(request):
     if request.method != 'POST':
         return erro('Método não permitido.', 405)
-    dados = json.loads(request.body or '{}')
-    nome_login = str(dados.get('login', '')).strip().lower()
+    try:
+        dados = json.loads(request.body or '{}')
+    except ValueError:
+        return erro('JSON inválido.')
+    nome_login = str(dados.get('login', '')).strip().lower()[:150]
+    ip = ip_do_cliente(request)
+    k_user, k_ip = f'login-user:{nome_login}', f'login-ip:{ip}'
+    if excedeu(k_user, 5) or excedeu(k_ip, 20):
+        log.warning('login bloqueado (muitas tentativas) usuario=%s ip=%s', nome_login, ip)
+        return erro('Muitas tentativas. Espere 15 minutos e tente de novo.', 429)
     pendente = Usuario.objects.filter(username=nome_login, aguardando_liberacao=True).first()
     if pendente and pendente.check_password(str(dados.get('senha', ''))):
         return erro('Seu cadastro está aguardando a coordenação escolher o seu perfil. Você recebe acesso assim que ela liberar.', 403)
@@ -139,8 +174,13 @@ def entrar(request):
     else:
         u = authenticate(request, username=nome_login, password=dados.get('senha', ''))
     if not u:
+        contar(k_user, 900)
+        contar(k_ip, 900)
+        log.warning('login falhou usuario=%s ip=%s', nome_login, ip)
         return erro('Usuário ou senha inválidos.', 401)
+    zerar(k_user)
     login(request, u, backend='django.contrib.auth.backends.ModelBackend')
+    log.info('login ok usuario=%s ip=%s', u.username, ip)
     return JsonResponse(perfil_json(u))
 
 
@@ -150,7 +190,14 @@ def cadastrar(request):
     Não: fica aguardando, e a coordenação/supervisão recebe o aviso para escolher o perfil."""
     if request.method != 'POST':
         return erro('Método não permitido.', 405)
-    d = json.loads(request.body or '{}')
+    ip = ip_do_cliente(request)
+    if excedeu(f'cadastro-ip:{ip}', 10):
+        log.warning('cadastro bloqueado (muitos cadastros) ip=%s', ip)
+        return erro('Muitos cadastros feitos daqui. Tente mais tarde.', 429)
+    try:
+        d = json.loads(request.body or '{}')
+    except ValueError:
+        return erro('JSON inválido.')
     nome = str(d.get('nome') or '').strip()[:80]
     login_ = str(d.get('login') or '').strip().lower()
     email = str(d.get('email') or '').strip()[:120]
@@ -161,8 +208,10 @@ def cadastrar(request):
         return erro('O usuário deve ser nome.sobrenome, só letras minúsculas sem acento (ex.: fabricio.alves).')
     if email and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email):
         return erro('E-mail inválido.')
-    if len(senha) < 6 or senha == settings.FATURALE_SENHA_INICIAL:
-        return erro('A senha precisa de pelo menos 6 caracteres (e não pode ser 123456).')
+    if senha == settings.FATURALE_SENHA_INICIAL:
+        return erro('Essa senha não pode ser usada. Escolha outra.')
+    if (msg := senha_fraca(senha, Usuario(username=login_, first_name=nome, email=email))):
+        return erro(msg)
     if senha != str(d.get('confirmacao') or ''):
         return erro('A confirmação não é igual à senha.')
     resposta = str(d.get('faturista') or '').strip().lower()
@@ -180,6 +229,8 @@ def cadastrar(request):
         u.save()
     except IntegrityError:
         return erro('Esse usuário já existe. Escolha outro.', 409)
+    contar(f'cadastro-ip:{ip}', 3600)
+    log.info('cadastro novo usuario=%s faturista=%s ip=%s', login_, faturista, ip)
     if faturista:  # já entra com o padrão de produção de faturista
         login(request, u, backend='django.contrib.auth.backends.ModelBackend')
         return JsonResponse({**perfil_json(u), 'entrou': True})
@@ -214,8 +265,11 @@ def sugerir_usuario(nome, ocupado=''):
 
 def cadastro_usuario(request):
     """Confere, durante o cadastro, se o usuário está livre e sugere outro (o nome pode repetir; o usuário não)."""
-    login_ = str(request.GET.get('login') or '').strip().lower()
-    nome = str(request.GET.get('nome') or '')
+    ip = ip_do_cliente(request)
+    if contar(f'checa-ip:{ip}', 600) > 120:
+        return erro('Muitas consultas. Espere alguns minutos.', 429)
+    login_ = str(request.GET.get('login') or '').strip().lower()[:30]
+    nome = str(request.GET.get('nome') or '')[:80]
     livre = bool(login_) and usuario_livre(login_)
     return JsonResponse({'livre': livre, 'sugestao': '' if livre else sugerir_usuario(nome, login_)})
 
@@ -235,18 +289,25 @@ def trocar_senha(request):
     """Troca a própria senha. Obrigatório no primeiro acesso (senha inicial)."""
     u, d = request.user, request.dados
     atual, nova = str(d.get('atual') or ''), str(d.get('nova') or '')
+    k = f'senha-user:{u.id}'
+    if excedeu(k, 5):
+        return erro('Muitas tentativas. Espere 15 minutos e tente de novo.', 429)
     if not u.check_password(atual):
+        contar(k, 900)
+        log.warning('troca de senha com senha atual errada usuario=%s ip=%s', u.username, ip_do_cliente(request))
         return erro('A senha atual não confere.')
-    if len(nova) < 6:
-        return erro('A senha nova precisa de pelo menos 6 caracteres.')
     if nova == atual or nova == settings.FATURALE_SENHA_INICIAL:
-        return erro('Escolha uma senha diferente da atual e da senha inicial.')
+        return erro('Escolha uma senha diferente da atual.')
+    if (msg := senha_fraca(nova, u)):
+        return erro(msg)
     if nova != str(d.get('confirmacao') or ''):
         return erro('A confirmação não é igual à senha nova.')
     u.set_password(nova)
     u.trocar_senha = False
     u.save()
+    zerar(k)
     update_session_auth_hash(request, u)
+    log.info('senha trocada usuario=%s', u.username)
     return JsonResponse(perfil_json(u))
 
 
@@ -284,9 +345,11 @@ def usuarios(request):
         return erro('Login já existe.', 409)
     funcao = d.get('funcao') if d.get('funcao') in ('faturamento', 'xml', 'ambos') else 'faturamento'
     u = Usuario(username=login_, first_name=nome, perfil=d['perfil'], trocar_senha=True, funcao=funcao)
-    u.set_password(settings.FATURALE_SENHA_INICIAL)  # a pessoa troca no primeiro acesso
+    temporaria = senha_temporaria()
+    u.set_password(temporaria)  # a pessoa troca no primeiro acesso
     u.save()
-    return JsonResponse({'id': u.id})
+    log.info('usuario criado pela gestao usuario=%s por=%s', u.username, request.user.username)
+    return JsonResponse({'id': u.id, 'login': u.username, 'senhaTemporaria': temporaria})
 
 
 @api('gestao', ('POST', 'DELETE'))
@@ -340,16 +403,19 @@ def usuario(request, pk):
     if d.get('funcao') in ('faturamento', 'xml', 'ambos'):
         alvo.funcao = d['funcao']
     alvo.is_active = bool(d.get('ativo'))
+    temporaria = None
     if d.get('redefinir'):
-        alvo.set_password(settings.FATURALE_SENHA_INICIAL)
+        temporaria = senha_temporaria()
+        alvo.set_password(temporaria)
         alvo.trocar_senha = True
+        log.info('senha redefinida usuario=%s por=%s', alvo.username, request.user.username)
     alvo.save()
     if d.get('redefinir') and alvo != request.user:
         from django.contrib.sessions.models import Session
         for sess in Session.objects.all():  # derruba o acesso aberto dessa pessoa
             if str(sess.get_decoded().get('_auth_user_id')) == str(alvo.id):
                 sess.delete()
-    return JsonResponse({'ok': True})
+    return JsonResponse({'ok': True, 'login': alvo.username, 'senhaTemporaria': temporaria})
 
 
 # ---------- Convênios ----------
@@ -742,7 +808,7 @@ def lote_pdf(request, pk):
         return resp
     if not l.arquivo:
         return erro('Lote sem PDF.', 404)
-    return FileResponse(l.arquivo.open('rb'), content_type='application/pdf')
+    return servir_arquivo(l.arquivo, f'lote-{l.numero_lote}')
 
 
 @api('gestao', ('DELETE',))
@@ -923,7 +989,7 @@ def envios_xml(request):
         numero_lote=numero, convenio=conv, lote=lote_,
         responsavel_id=d.get('responsavelId') if u.ve_todos and d.get('responsavelId') else u.id,
         protocolo=str(d.get('protocolo') or '').strip(), data_envio=data_envio,
-        observacao=d.get('observacao') or '', nome_arquivo=str(d.get('nomeArquivo') or '')[:200],
+        observacao=d.get('observacao') or '', nome_arquivo=nome_seguro(d.get('nomeArquivo')),
         valor_protocolo=valor_protocolo, qtd_guias=int(d['qtdGuias']) if str(d.get('qtdGuias') or '').isdigit() else None)
     if caminho := pegar_pendente(d.get('arquivoId')):
         anexar(e.arquivo, f'xml-{e.id}{caminho.suffix}', caminho)
@@ -979,7 +1045,7 @@ def envio_arquivo(request, pk):
         return resp
     if not e.arquivo:
         return erro('Envio sem arquivo.', 404)
-    return FileResponse(e.arquivo.open('rb'), filename=e.nome_arquivo or Path(e.arquivo.name).name)
+    return servir_arquivo(e.arquivo, e.nome_arquivo)
 
 
 @api()
@@ -1259,6 +1325,12 @@ def alertas(request):
         novos = list(Usuario.objects.filter(aguardando_liberacao=True).order_by('date_joined').values_list('first_name', flat=True))
         if novos:
             lista.insert(0, {'nivel': 'urgente', 'aba': 'gestao', 'titulo': f'{len(novos)} cadastro(s) aguardando escolha de perfil', 'itens': novos})
+        recentes = list(Usuario.objects.filter(is_active=True, trocar_senha=False, perfil='faturista',
+                                               date_joined__gte=timezone.now() - timedelta(days=3))
+                        .order_by('-date_joined').values_list('first_name', 'username')[:20])
+        if recentes:
+            lista.insert(0, {'nivel': 'atencao', 'aba': 'gestao', 'titulo': f'{len(recentes)} cadastro(s) novo(s) de faturista nos últimos 3 dias — confira se são da equipe',
+                             'itens': [f'{n} ({l})' for n, l in recentes]})
         abertas = list(DuvidaConvenio.objects.filter(resposta='').select_related('convenio').order_by('id')[:30])
         if abertas:
             lista.insert(0, {'nivel': 'atencao', 'aba': 'convenios', 'titulo': f'{len(abertas)} dúvida(s) sobre convênios para responder',

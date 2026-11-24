@@ -3,58 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Faturale · demonstração</title>
+  <meta name="robots" content="noindex">
+  <title>Faturale mudou de endereço</title>
+  <meta http-equiv="refresh" content="0; url=https://faturale.firelsoft.com.br/">
+  <link rel="canonical" href="https://faturale.firelsoft.com.br/">
   <link rel="icon" href="logo-f.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=1795477562">
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0b1530; color: #fff;
+      font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; text-align: center; padding: 16px; }
+    img { width: 72px; }
+    a { color: #7fb0ff; font-weight: 700; }
+  </style>
 </head>
 <body>
-  <section id="tela-login" class="login oculto">
-    <div class="login-caixa">
-      <img src="logo-f.png" alt="">
-      <div class="marca-nome">FATURALE</div>
-      <div class="marca-sub">CONSULTORIA EM SAÚDE</div>
-
-      <div class="entrada">
-        <div class="entrada-abas"><button type="button" data-entrada="entrar" class="ativa">Entrar</button><button type="button" data-entrada="cadastro">Cadastrar-se</button></div>
-
-        <form id="form-login">
-          <div class="campo"><label for="login">Usuário</label><input id="login" autocomplete="username" required placeholder="ex.: maria.silva"></div>
-          <div class="campo"><label for="senha">Senha</label><input id="senha" type="password" autocomplete="current-password" required></div>
-          <button class="btn btn-primario" style="width:100%;justify-content:center">Entrar</button>
-        </form>
-
-        <form id="form-cadastro" class="oculto">
-          <div class="campo"><label>Nome completo</label><input name="nome" required maxlength="80" autocomplete="name"></div>
-          <div class="campo"><label>Usuário (para entrar)</label><input name="login" required pattern="[a-z0-9._\-]{3,30}" placeholder="ex.: maria.silva" autocomplete="username"></div>
-          <div class="campo"><label>E-mail</label><input name="email" type="email" maxlength="120" autocomplete="email"></div>
-          <div class="campo"><label>Senha (mínimo 6)</label><input name="senha" type="password" minlength="6" required autocomplete="new-password"></div>
-          <div class="campo"><label>Repita a senha</label><input name="confirmacao" type="password" minlength="6" required autocomplete="new-password"></div>
-          <button class="btn btn-primario" style="width:100%;justify-content:center">Enviar cadastro</button>
-          <p class="entrada-nota">Você entra na Fatura. A coordenação ou a supervisão libera o seu acesso e, se precisar, muda a sua função.</p>
-        </form>
-        <p class="ok-login oculto" id="ok-cadastro"></p>
-      </div>
-      <p class="erro" id="erro-login"></p>
-      <button type="button" class="link-publico" data-publico>Consultar convênios e calendário sem login</button>
-    </div>
-  </section>
-
-  <section id="tela-app" class="app oculto">
-    <aside class="lateral">
-      <div class="marca">
-        <img src="logo-f.png" alt="">
-        <div><b>FATURALE</b><span>CONSULTORIA EM SAÚDE</span></div>
-      </div>
-      <nav id="abas"></nav>
-      <div class="usuario"><div><span id="nome-usuario"></span><small id="perfil-usuario"></small></div><button id="minha-senha" class="oculto">Trocar senha</button><button id="sair">Sair</button></div>
-    </aside>
-    <main><div id="alertas"></div><div id="conteudo"></div></main>
-  </section>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="demo-api.js?v=1795477562"></script>
-  <script type="module" src="app.js?v=1795477562"></script>
+  <main>
+    <img src="logo-f.png" alt="">
+    <h1>O Faturale mudou de endereço</h1>
+    <p>Acesse <a href="https://faturale.firelsoft.com.br/">faturale.firelsoft.com.br</a></p>
+  </main>
+  <script>location.replace('https://faturale.firelsoft.com.br/' + location.hash);</script>
 </body>
 </html>

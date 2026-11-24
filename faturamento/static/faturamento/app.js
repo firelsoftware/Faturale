@@ -50,6 +50,8 @@ function avisar(msg, erro = false) {
   document.body.append(el);
   setTimeout(() => el.remove(), 3500);
 }
+// Botões "Imprimir" (sem onclick no HTML: a política de segurança CSP bloqueia script inline)
+document.addEventListener('click', (e) => { if (e.target.closest('[data-imprimir]')) window.print(); });
 const tentar = (fn) => async (...a) => { try { await fn(...a); } catch (e) { avisar(e.message, true); } };
 
 function modal(html, aoMontar) {
@@ -205,11 +207,11 @@ $('#minha-senha').addEventListener('click', () => trocarSenha(false));
 function trocarSenha(obrigatoria) {
   if (document.querySelector('.form-senha')) return;
   const fecharModal = modal(`<h2>${obrigatoria ? 'Crie sua senha' : 'Trocar senha'}</h2>
-    ${obrigatoria ? '<p class="apagado" style="margin-top:-6px">Você está com a senha inicial. Crie uma senha sua para continuar.</p>' : ''}
+    ${obrigatoria ? '<p class="apagado" style="margin-top:-6px">Você está com uma senha temporária. Crie uma senha sua para continuar.</p>' : ''}
     <form class="form-senha">
       <div class="campo"><label>Senha atual${obrigatoria ? ' (a inicial)' : ''}</label><input name="atual" type="password" autocomplete="current-password" required></div>
-      <div class="campo"><label>Senha nova (mínimo 6 caracteres)</label><input name="nova" type="password" minlength="6" autocomplete="new-password" required></div>
-      <div class="campo"><label>Repita a senha nova</label><input name="confirmacao" type="password" minlength="6" autocomplete="new-password" required></div>
+      <div class="campo"><label>Senha nova (mínimo 8 caracteres)</label><input name="nova" type="password" minlength="8" autocomplete="new-password" required></div>
+      <div class="campo"><label>Repita a senha nova</label><input name="confirmacao" type="password" minlength="8" autocomplete="new-password" required></div>
       <p class="erro-modal"></p>
       <div class="rodape">${obrigatoria ? '<button type="button" class="btn btn-claro" data-sair-troca>Sair</button>' : '<button type="button" class="btn btn-claro" data-fechar>Cancelar</button>'}
         <button class="btn btn-primario">Salvar senha</button></div></form>`,
@@ -485,14 +487,14 @@ async function carregarAlertas() {
   $('#alertas').innerHTML = visiveis.map((a) => `<div class="alerta ${a.nivel}" data-chave="${esc(chaveAlerta(a, r.hoje))}">
       <span class="alerta-icone">${a.nivel === 'urgente' ? '!' : a.nivel === 'atencao' ? '⏰' : 'ℹ'}</span>
       <div><b>${esc(a.titulo)}</b><span>${a.itens.slice(0, 10).map(esc).join(', ')}${a.itens.length > 10 ? ` e mais ${a.itens.length - 10}` : ''}</span></div>
-      ${a.aba ? `<button class="btn btn-claro btn-mini" data-ir="${a.aba}">${{ calendario: 'Ver calendário', convenios: 'Ver convênios' }[a.aba] || (/cadastro/.test(a.titulo) ? 'Liberar' : 'Ver lotes')}</button>` : ''}
+      ${a.aba ? `<button class="btn btn-claro btn-mini" data-ir="${a.aba}">${{ calendario: 'Ver calendário', convenios: 'Ver convênios' }[a.aba] || (/cadastr/.test(a.titulo) ? (/aguardando/.test(a.titulo) ? 'Liberar' : 'Ver usuários') : 'Ver lotes')}</button>` : ''}
       <button class="fechar-alerta" title="Esconder até amanhã" data-fechar-alerta>×</button></div>`).join('');
   // Bolinha vermelha na aba Calendário quando há algo para hoje
   $('[data-aba=calendario]')?.classList.toggle('com-alerta', r.alertas.some((a) => a.nivel === 'urgente'));
 }
 $('#alertas').addEventListener('click', (e) => {
   const ir = e.target.closest('[data-ir]');
-  if (ir) { if (ir.dataset.ir === 'gestao' && /cadastro/.test(ir.closest('.alerta')?.textContent || '')) subGestao = 'usuarios'; return abrirAba(ir.dataset.ir); }
+  if (ir) { if (ir.dataset.ir === 'gestao' && /cadastr/.test(ir.closest('.alerta')?.textContent || '')) subGestao = 'usuarios'; return abrirAba(ir.dataset.ir); }
   const fechar = e.target.closest('[data-fechar-alerta]');
   if (fechar) {
     const caixa = fechar.closest('.alerta');
@@ -1219,7 +1221,7 @@ async function telaCalendario() {
       <div class="acoes">
         <div class="alternar ${estado.usuario.publico ? 'oculto' : ''}"><button data-filtro="meus" class="${s.filtro === 'meus' && !s.pessoa ? 'ativo' : ''}">Meus convênios</button><button data-filtro="todos" class="${s.filtro === 'todos' && !s.pessoa ? 'ativo' : ''}">Todos</button></div>
         ${veTodos() ? `<select id="cal-pessoa" style="width:auto">${opcoesPessoa(s.pessoa, 'Filtrar por pessoa')}</select>` : ''}
-        <button class="btn btn-claro" onclick="print()">Imprimir</button>
+        <button class="btn btn-claro" data-imprimir>Imprimir</button>
       </div></div>
     <div class="cartao"><h2>Próximas entregas <small class="apagado">marque quando entregar</small></h2><div class="prox">${proxHtml}</div></div>
     <div class="cartao">
@@ -1563,6 +1565,19 @@ async function gestaoLotes() {
   carregar();
 }
 
+// Senha temporária: aparece uma vez só, para a gestão passar à pessoa
+function mostrarSenhaTemporaria(r) {
+  if (!r?.senhaTemporaria) return;
+  modal(`<h2>Senha temporária</h2>
+    <p>Passe estes dados <b>só para a própria pessoa</b>. No primeiro acesso ela cria a senha dela.</p>
+    <div class="senha-temp"><div><small>Usuário</small><b>${esc(r.login)}</b></div><div><small>Senha temporária</small><b>${esc(r.senhaTemporaria)}</b></div></div>
+    <p class="apagado">Esta senha não aparece de novo. Se perder, use "Gerar uma senha temporária nova".</p>
+    <div class="rodape"><button type="button" class="btn btn-claro" data-copiar>Copiar</button><button type="button" class="btn btn-primario" data-fechar>Pronto</button></div>`,
+  (el) => $('[data-copiar]', el).addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(`Usuário: ${r.login}\nSenha temporária: ${r.senhaTemporaria}`); avisar('Copiado.'); } catch { avisar('Não deu para copiar. Anote a senha.', true); }
+  }));
+}
+
 async function gestaoUsuarios() {
   const todos = await api('/api/usuarios');
   const pendentes = todos.filter((u) => u.aguardando);
@@ -1611,15 +1626,16 @@ async function gestaoUsuarios() {
 
     </div>
     ${u.id ? `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="ativo" style="width:auto" ${u.ativo ? 'checked' : ''}> Usuário ativo</label>
-      <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" name="redefinir" style="width:auto"> Redefinir a senha para a inicial (a pessoa cria outra no próximo acesso)</label>`
-      : '<p class="apagado" style="margin:0">A pessoa entra com a senha inicial e cria a dela no primeiro acesso.</p>'}
+      <label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" name="redefinir" style="width:auto"> Gerar uma senha temporária nova (a pessoa cria outra no próximo acesso)</label>`
+      : '<p class="apagado" style="margin:0">Ao salvar, aparece uma senha temporária para você passar à pessoa. Ela cria a dela no primeiro acesso.</p>'}
     <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Cancelar</button><button class="btn btn-primario">Salvar</button></div></form>`;
 
   $('#novo-usuario').addEventListener('click', () => modal(`<h2>Novo usuário</h2>${form()}`, (el, fechar) => {
     $('form', el).addEventListener('submit', tentar(async (e) => {
       e.preventDefault();
-      await api('/api/usuarios', { method: 'POST', corpo: Object.fromEntries(new FormData(e.target)) });
+      const r = await api('/api/usuarios', { method: 'POST', corpo: Object.fromEntries(new FormData(e.target)) });
       fechar(); avisar('Usuário criado.'); await carregarListas(); gestaoUsuarios();
+      mostrarSenhaTemporaria(r);
     }));
   }));
   $('#sub tbody').addEventListener('click', tentar(async (e) => {
@@ -1637,8 +1653,9 @@ async function gestaoUsuarios() {
       $('form', el).addEventListener('submit', tentar(async (ev) => {
         ev.preventDefault();
         const f = Object.fromEntries(new FormData(ev.target));
-        await api(`/api/usuarios/${u.id}`, { method: 'PUT', corpo: { ...f, ativo: !!f.ativo, redefinir: !!f.redefinir } });
+        const r = await api(`/api/usuarios/${u.id}`, { method: 'PUT', corpo: { ...f, ativo: !!f.ativo, redefinir: !!f.redefinir } });
         fechar(); avisar('Usuário atualizado.'); await carregarListas(); gestaoUsuarios();
+        mostrarSenhaTemporaria(r);
       }));
     });
   }));
@@ -1754,7 +1771,7 @@ function coordDivisao(caixa) {
   };
   const semXml = ativos.filter((c) => !c.tem_xml);
   caixa.innerHTML = `
-    <div class="acoes" style="margin-bottom:14px"><button class="btn btn-claro" onclick="print()">Imprimir</button></div>
+    <div class="acoes" style="margin-bottom:14px"><button class="btn btn-claro" data-imprimir>Imprimir</button></div>
     ${quadro('Envio de XML — divisão de convênios', 'xml_id', 'responsavel_xml', (c) => c.tem_xml)}
     ${quadro('Fatura — quem fatura cada convênio', 'faturista_id', 'faturista')}
     <div class="cartao"><h2>Convênios sem XML</h2>${semXml.length
@@ -1947,7 +1964,7 @@ async function telaCoordenacao() {
   const sub = soProducao ? 'relatorios' : subCoord;
   const cabeca = `
     <div class="topo"><div><h1>${soProducao ? 'Relatórios' : 'Coordenação'}</h1><p>${soProducao ? 'Produção de cada faturista por dia, mês e ano, e relatórios por convênio, competência ou período.' : 'Quem fatura e quem passa o XML de cada convênio, e a divisão da equipe.'}</p></div>
-      ${sub === 'relatorios' ? '<div class="acoes"><button class="btn btn-claro" id="csv">Exportar planilha (CSV)</button><button class="btn btn-claro" onclick="print()">Imprimir</button></div>' : ''}</div>
+      ${sub === 'relatorios' ? '<div class="acoes"><button class="btn btn-claro" id="csv">Exportar planilha (CSV)</button><button class="btn btn-claro" data-imprimir>Imprimir</button></div>' : ''}</div>
     <div class="subabas ${soProducao ? 'oculto' : ''}">${SUBS_COORD.map(([k, v]) => `<button data-sub="${k}" class="${subCoord === k ? 'ativa' : ''}">${v}</button>`).join('')}</div>`;
   const ligarSub = () => $('.subabas').addEventListener('click', (e) => {
     const b = e.target.closest('[data-sub]');
@@ -2073,7 +2090,7 @@ async function telaDiretoria() {
   const statusTotal = p.status.reduce((s, x) => s + x.lotes, 0) || 1;
   $('#conteudo').innerHTML = `
     <div class="topo"><div><h1>Diretoria</h1><p>Visão geral do faturamento · ${mesCurto(p.atual)}</p></div>
-      <div class="acoes"><button class="btn btn-claro" onclick="print()">Imprimir</button></div></div>
+      <div class="acoes"><button class="btn btn-claro" data-imprimir>Imprimir</button></div></div>
     <div class="kpis">
       <div class="kpi destaque"><span>Faturado no mês</span><b>${moeda(a.valor)}</b>${varia(a.valor, c.valor)}</div>
       <div class="kpi"><span>Guias no mês</span><b>${num(a.guias)}</b>${varia(a.guias, c.guias)}</div>

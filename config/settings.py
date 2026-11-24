@@ -27,10 +27,14 @@ load_dotenv(BASE_DIR / '.env')
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'faturale-demo-troque-em-producao')
+_CHAVE_DE_TESTE = 'faturale-demo-troque-em-producao'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', _CHAVE_DE_TESTE)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', '1') == '1'
+if not DEBUG and (SECRET_KEY == _CHAVE_DE_TESTE or len(SECRET_KEY) < 32):
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured('Em produção, defina DJANGO_SECRET_KEY com uma chave longa e secreta.')
 
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
@@ -41,6 +45,8 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_SSL_REDIRECT = True  # o Fly já força HTTPS; isto garante mesmo atrás de outro proxy
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 365  # o navegador só usa HTTPS neste endereço por 1 ano
     SESSION_COOKIE_AGE = 60 * 60 * 12  # 12 h logado
 
 
@@ -59,6 +65,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'faturamento.redirecionar.RedirecionarDominio',  # firelsoft.com.br -> faturale.firelsoft.com.br
+    'django.middleware.csp.ContentSecurityPolicyMiddleware',  # CSP: só scripts do próprio sistema
+    'faturamento.seguranca.CabecalhosDeSeguranca',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # serve app.js/styles.css no servidor
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -170,11 +178,42 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 20 * 1024 * 1024
 # Regra da quantidade de guias quando o PDF traz "X/Y" (ex.: 80/74 → 74 guias; o maior é a contagem de itens).
 FATURALE_REGRA_GUIAS = os.environ.get('FATURALE_REGRA_GUIAS', 'menor')
 
-# Modo demonstração: entra escolhendo a pessoa, sem senha. Desligue com FATURALE_MODO_DEMO=0.
-FATURALE_MODO_DEMO = os.environ.get('FATURALE_MODO_DEMO', '1') == '1'
+# Modo demonstração: entra escolhendo a pessoa, SEM SENHA. Só liga se FATURALE_MODO_DEMO=1 (nunca em produção).
+FATURALE_MODO_DEMO = os.environ.get('FATURALE_MODO_DEMO', '0') == '1'
+if FATURALE_MODO_DEMO and not DEBUG:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured('O modo demonstração (entrar sem senha) não pode ser usado em produção.')
 
-# Senha que a pessoa recebe ao ser cadastrada ou quando a gestão redefine. Ela troca no primeiro acesso.
+# Antiga senha padrão: não é mais usada. Fica só para recusar quem tentar usá-la como senha nova
+# e para o comando senhas_temporarias achar as contas que ainda estão com ela.
 FATURALE_SENHA_INICIAL = os.environ.get('FATURALE_SENHA_INICIAL', '123456')
+
+# Painel /admin/ do Django: fechado, a não ser que FATURALE_ADMIN=1
+FATURALE_ADMIN = os.environ.get('FATURALE_ADMIN', '0') == '1'
+
+# Content Security Policy: scripts só do próprio sistema; estilos inline (usados nas telas) e fontes do Google
+from django.utils.csp import CSP  # noqa: E402
+SECURE_CSP = {
+    'default-src': [CSP.SELF],
+    'script-src': [CSP.SELF],
+    'style-src': [CSP.SELF, CSP.UNSAFE_INLINE, 'https://fonts.googleapis.com'],
+    'font-src': [CSP.SELF, 'https://fonts.gstatic.com'],
+    'img-src': [CSP.SELF, 'data:', 'blob:'],
+    'connect-src': [CSP.SELF],
+    'object-src': [CSP.NONE],
+    'base-uri': [CSP.SELF],
+    'form-action': [CSP.SELF],
+    'frame-ancestors': [CSP.NONE],
+}
+
+# Registro de segurança (entradas, falhas, bloqueios) no log do servidor. Nunca registra senha.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {'simples': {'format': '%(asctime)s %(levelname)s %(name)s %(message)s'}},
+    'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'simples'}},
+    'loggers': {'faturale.seguranca': {'handlers': ['console'], 'level': 'INFO', 'propagate': False}},
+}
 
 # Endereço oficial do sistema e endereços que levam até ele (ex.: firelsoft.com.br sem o "faturale.")
 FATURALE_ENDERECO = os.environ.get('FATURALE_ENDERECO', '')

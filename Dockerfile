@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -c "from rapidocr import RapidOCR; RapidOCR()" || true
 
 COPY . .
-RUN DJANGO_SECRET_KEY=build python manage.py collectstatic --noinput
+RUN DJANGO_SECRET_KEY=so-para-montar-a-imagem-nao-usada-em-producao-0000 python manage.py collectstatic --noinput
 
 EXPOSE 8000
 # Aplica as migrações e sobe o servidor

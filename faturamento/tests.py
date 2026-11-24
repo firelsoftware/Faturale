@@ -18,8 +18,8 @@ class CadastroTests(TestCase):
         return (cliente or self.client).post(url, json.dumps(dados), content_type='application/json')
 
     def cadastro(self, login, faturista, **extra):
-        return self.post('/api/cadastro', {'nome': f'Pessoa {login}', 'login': login, 'senha': 'abc123x',
-                                           'confirmacao': 'abc123x', 'faturista': faturista, **extra})
+        return self.post('/api/cadastro', {'nome': f'Pessoa {login}', 'login': login, 'senha': 'Faturale#2026x',
+                                           'confirmacao': 'Faturale#2026x', 'faturista': faturista, **extra})
 
     def test_faturista_entra_na_hora_com_padrao_de_producao(self):
         r = self.cadastro('maria.silva', 'sim')
@@ -38,7 +38,7 @@ class CadastroTests(TestCase):
         u = Usuario.objects.get(username='joao.souza')
         self.assertFalse(u.is_active)
         self.assertTrue(u.aguardando_liberacao)
-        r = self.post('/api/entrar', {'login': 'joao.souza', 'senha': 'abc123x'})
+        r = self.post('/api/entrar', {'login': 'joao.souza', 'senha': 'Faturale#2026x'})
         self.assertEqual(r.status_code, 403)
         self.assertIn('perfil', r.json()['erro'])
         self.client.force_login(self.thalita)
@@ -86,13 +86,13 @@ class CadastroTests(TestCase):
         self.assertTrue(Usuario.objects.filter(pk=fat.pk).exists())
 
     def test_nome_e_sobrenome_e_usuario_nome_ponto_sobrenome(self):
-        r = self.post('/api/cadastro', {'nome': 'Fabrício', 'login': 'fabricio.alves', 'senha': 'abc123x', 'confirmacao': 'abc123x', 'faturista': 'sim'})
+        r = self.post('/api/cadastro', {'nome': 'Fabrício', 'login': 'fabricio.alves', 'senha': 'Faturale#2026x', 'confirmacao': 'Faturale#2026x', 'faturista': 'sim'})
         self.assertEqual(r.status_code, 400)
         self.assertIn('sobrenome', r.json()['erro'])
-        r = self.post('/api/cadastro', {'nome': 'Fabrício Alves', 'login': 'fabricio', 'senha': 'abc123x', 'confirmacao': 'abc123x', 'faturista': 'sim'})
+        r = self.post('/api/cadastro', {'nome': 'Fabrício Alves', 'login': 'fabricio', 'senha': 'Faturale#2026x', 'confirmacao': 'Faturale#2026x', 'faturista': 'sim'})
         self.assertEqual(r.status_code, 400)
         self.assertIn('nome.sobrenome', r.json()['erro'])
-        r = self.post('/api/cadastro', {'nome': 'Fabrício Alves', 'login': 'fabricio.alves', 'senha': 'abc123x', 'confirmacao': 'abc123x', 'faturista': 'sim'})
+        r = self.post('/api/cadastro', {'nome': 'Fabrício Alves', 'login': 'fabricio.alves', 'senha': 'Faturale#2026x', 'confirmacao': 'Faturale#2026x', 'faturista': 'sim'})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()['nome'], 'Fabrício Alves')
 
@@ -118,12 +118,12 @@ class CadastroTests(TestCase):
         self.assertEqual(r, {'livre': False, 'sugestao': ''})
         self.assertTrue(self.client.get('/api/cadastro/usuario', {'login': 'fabricio.silva'}).json()['livre'])
         # cadastrar com o usuário repetido é recusado com a sugestão
-        r = self.post('/api/cadastro', {'nome': 'Fabrício Silva Alves', 'login': 'fabricio.alves', 'senha': 'abc123x',
-                                        'confirmacao': 'abc123x', 'faturista': 'sim'})
+        r = self.post('/api/cadastro', {'nome': 'Fabrício Silva Alves', 'login': 'fabricio.alves', 'senha': 'Faturale#2026x',
+                                        'confirmacao': 'Faturale#2026x', 'faturista': 'sim'})
         self.assertEqual(r.status_code, 409)
         self.assertIn('fabricio.silva', r.json()['erro'])
         # o mesmo nome de exibição com outro usuário entra normalmente
-        r = self.post('/api/cadastro', {'nome': 'Fabrício Alves', 'login': 'fabricio.silva', 'senha': 'abc123x',
-                                        'confirmacao': 'abc123x', 'faturista': 'sim'})
+        r = self.post('/api/cadastro', {'nome': 'Fabrício Alves', 'login': 'fabricio.silva', 'senha': 'Faturale#2026x',
+                                        'confirmacao': 'Faturale#2026x', 'faturista': 'sim'})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(Usuario.objects.filter(first_name='Fabrício Alves').count(), 2)

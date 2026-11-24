@@ -605,3 +605,9 @@ form.lancar button { width: 100%; padding: 10px; }
 .usuario-aviso { display: block; margin-top: 5px; font-size: 12.5px; font-weight: 600; }
 .usuario-aviso.ok { color: #6ee7a8; }
 .usuario-aviso.ocupado { color: #ffd166; }
+
+/* Senha temporária mostrada para a gestão */
+.senha-temp { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+.senha-temp div { background: var(--azul-suave, #eef3ff); border-radius: 10px; padding: 10px 14px; }
+.senha-temp small { display: block; color: var(--texto-2); font-size: 12px; }
+.senha-temp b { font-size: 18px; letter-spacing: .04em; font-family: ui-monospace, Consolas, monospace; }

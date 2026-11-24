@@ -126,7 +126,10 @@ class Command(BaseCommand):
         for nome, login, perfil in EQUIPE:
             u, criado = Usuario.objects.get_or_create(username=login, defaults={'first_name': nome, 'perfil': perfil})
             if criado:
-                u.set_password(settings.FATURALE_SENHA_INICIAL)  # troca no primeiro acesso
+                from faturamento.seguranca import senha_temporaria
+                temporaria = senha_temporaria()
+                u.set_password(temporaria)  # troca no primeiro acesso
+                self.stdout.write(f'  {login}: senha temporária {temporaria}')
                 u.trocar_senha = True
                 u.is_staff = u.is_superuser = perfil == 'diretor'  # Leandro abre o /admin
                 u.save()

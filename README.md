@@ -64,17 +64,22 @@ recebem um alerta e, em **Gestão → Usuários**, liberam (escolhendo perfil e 
 coordenação pode dar perfil de faturista ou supervisora; a supervisão, de faturista; a diretoria, qualquer um.
 Embaixo do formulário fica o link para a consulta sem login.
 
-## Senhas
+## Senhas e segurança
 
-Com `FATURALE_MODO_DEMO=0` no `.env`, clicar na pessoa pede a senha. Todo mundo começa com a
-**senha inicial** (`FATURALE_SENHA_INICIAL`, padrão `123456`) e é obrigado a criar a própria senha
-no primeiro acesso: antes disso o sistema não libera nenhuma tela. Gestão → Usuários → Editar →
-**Redefinir a senha** volta a pessoa para a senha inicial (esqueceu a senha). Para pôr a senha
-inicial em todos de uma vez: `manage.py senha_inicial` (ou `--login fulano`).
+- Quem se cadastra cria a própria senha (mínimo 8 caracteres; senhas comuns, só números ou parecidas
+  com o nome são recusadas).
+- Quando a gestão cria um usuário ou usa **Gerar uma senha temporária nova**, o sistema mostra uma
+  **senha temporária aleatória** uma única vez, para ser passada só à própria pessoa. No primeiro acesso
+  ela é obrigada a criar a dela; antes disso o sistema não libera nenhuma tela.
+- `manage.py senhas_temporarias` gera senhas temporárias para quem ainda estiver com a antiga senha
+  padrão (ou `--login fulano` para uma pessoa).
+- Login com limite de tentativas (5 erros por usuário ou 20 por IP em 15 minutos), registro de entradas
+  e falhas no log do servidor, cabeçalhos de segurança (CSP, HSTS, X-Frame-Options) e painel `/admin/`
+  fechado (só abre com `FATURALE_ADMIN=1`). Detalhes em `SEGURANCA.md`.
 
-## Entrar (modo demonstração)
+## Entrar (modo demonstração, só no computador local)
 
-A tela inicial mostra a equipe: é só clicar na pessoa, **sem senha**.
+Com `FATURALE_MODO_DEMO=1` (só funciona com `DJANGO_DEBUG=1`), entra-se **sem senha**.
 
 | Pessoa    | Perfil          | Abas                                                     |
 |-----------|-----------------|----------------------------------------------------------|

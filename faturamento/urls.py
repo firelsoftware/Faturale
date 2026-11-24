@@ -4,7 +4,6 @@ from . import views as v
 
 urlpatterns = [
     path('', v.inicio, name='inicio'),
-    path('api/entrar/pessoas', v.entrar_pessoas),
     path('api/publico/convenios', v.publico_convenios),
     path('api/publico/pessoas', v.publico_pessoas),
     path('api/publico/calendario', v.publico_calendario),
