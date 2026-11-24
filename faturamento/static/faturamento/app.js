@@ -643,9 +643,6 @@ function ligarLancarDoProtocolo(d, caixa, redesenhar, paraQuemAnexou = false) {
 // ---------- Quadro "Lançar produção" (sem arquivo) ----------
 // A pessoa digita nº do lote, convênio, guias e valor. Na Fatura vira um lote da produção dela;
 // no XML, um envio de XML na produção dela.
-// Unidades (hospitais) sugeridas no lançamento; dá para digitar outra
-const UNIDADES = ['DF Star', 'Hospital Santa Helena', 'Hospital do Coração do Brasil', 'Hospital Santa Luzia'];
-const STATUS_PRODUCAO = ['Em análise', 'Concluído', 'Pendente', 'Enviado'];
 function cartaoLancar(tipo) {
   const campo = tipo === 'xml' ? 'xml_id' : 'faturista_id';
   const meus = estado.convenios.filter((c) => c.ativo && c[campo] === estado.usuario.id && (tipo !== 'xml' || c.tem_xml));
@@ -658,15 +655,10 @@ function cartaoLancar(tipo) {
     <form class="lancar" data-tipo="${tipo}">
       <div class="campo"><label>Colaborador</label><input value="${esc(estado.usuario.nome)}" readonly tabindex="-1" class="campo-fixo"></div>
       <div class="campo"><label>Lote</label><input name="numeroLote" required inputmode="numeric" placeholder="ex.: 365118"></div>
-      <div class="campo"><label>Convênio</label><select name="convenioId" required><option value="">ex.: Bradesco</option>
-        ${meus.length ? `<optgroup label="Meus convênios">${opc(meus)}</optgroup><optgroup label="Todos">${opc(outros)}</optgroup>` : opc(outros)}</select></div>
-      <div class="campo"><label>Unidade</label><input name="unidade" required list="lista-unidades" maxlength="80" placeholder="ex.: DF Star">
-        <datalist id="lista-unidades">${UNIDADES.map((x) => `<option value="${esc(x)}">`).join('')}</datalist></div>
+      <div class="campo"><label>Convênio</label><input name="convenioNome" required list="lista-convenios" autocomplete="off" placeholder="ex.: Bradesco">
+        <datalist id="lista-convenios">${[...meus, ...outros].map((c) => `<option value="${esc(c.nome)}">`).join('')}</datalist></div>
+      <div class="campo"><label>Unidade</label><input name="unidade" required maxlength="80" placeholder="ex.: HOB"></div>
       <div class="campo"><label>Valor do protocolo <small class="apagado">(opcional)</small></label><input name="valor" inputmode="decimal" placeholder="ex.: 1.073,60"></div>
-      <div class="campo"><label>Contas analisadas</label><input name="contasAnalisadas" type="number" min="0" required inputmode="numeric" placeholder="ex.: 10"></div>
-      <div class="campo"><label>Contas separadas</label><input name="contasSeparadas" type="number" min="0" inputmode="numeric" placeholder="ex.: 2"></div>
-      <div class="campo"><label>Status</label><input name="situacao" list="lista-status" maxlength="60" placeholder="ex.: Concluído">
-        <datalist id="lista-status">${STATUS_PRODUCAO.map((x) => `<option value="${esc(x)}">`).join('')}</datalist></div>
       <div class="campo"><label>Data</label><input name="data" type="date" value="${hoje()}" required></div>
       <div class="campo"><label>&nbsp;</label><button class="btn btn-primario" style="justify-content:center">Lançar</button></div>
     </form></div>`;
@@ -696,8 +688,11 @@ function ligarLancar(depois) {
       const r = await api('/api/xml', { method: 'POST', corpo: { numeroLote: v.numeroLote.trim(), convenioId: v.convenioId, qtdGuias: v.qtdGuias, valorProtocolo: valor, dataEnvio: v.data } });
       avisar(`Lote ${r.numeroLote} lançado na sua produção de XML.${r.amarrado ? ' Já está ligado ao lote da Fatura.' : ''}`);
     } else {
-      const r = await api('/api/lotes', { method: 'POST', corpo: { numeroLote: v.numeroLote.trim(), convenioId: v.convenioId, qtdGuias: Number(v.contasAnalisadas || 0),
-        contasSeparadas: Number(v.contasSeparadas || 0), situacao: (v.situacao || '').trim(),
+      // Convênio digitado: tem que ser um dos cadastrados (o sistema sugere enquanto a pessoa digita)
+      const chave = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+      const conv = estado.convenios.find((c) => c.ativo && chave(c.nome) === chave(v.convenioNome));
+      if (!conv) throw new Error('Convênio não encontrado. Comece a digitar e escolha um da lista.');
+      const r = await api('/api/lotes', { method: 'POST', corpo: { numeroLote: v.numeroLote.trim(), convenioId: conv.id, qtdGuias: 0,
         valorTotal: valor, unidade: v.unidade.trim(), competencia: v.data.slice(0, 7), dataLancamento: v.data, faturistaId: estado.usuario.id } });
       avisar(`Lote ${v.numeroLote} (${v.unidade.trim()}) lançado na sua produção.${r.xmlAmarrados ? ' Ligado ao XML já registrado.' : ''}`);
     }
