@@ -682,6 +682,7 @@ function cartaoLancar(tipo) {
       <div class="campo"><label>Convênio</label><input name="convenioNome" required list="lista-convenios" autocomplete="off" placeholder="ex.: Bradesco">
         <datalist id="lista-convenios">${[...meus, ...outros].map((c) => `<option value="${esc(c.nome)}">`).join('')}</datalist></div>
       <div class="campo"><label>Unidade</label><input name="unidade" required maxlength="80" placeholder="ex.: HOB"></div>
+      <div class="campo"><label>Quantidade de guias</label><input name="qtdGuias" type="number" min="1" required inputmode="numeric" placeholder="ex.: 10"></div>
       <div class="campo"><label>Valor do protocolo <small class="apagado">(opcional)</small></label><input name="valor" inputmode="decimal" placeholder="ex.: 1.073,60"></div>
       <div class="campo"><label>Data</label><input name="data" type="date" value="${hoje()}" required></div>
       <div class="campo"><label>&nbsp;</label><button class="btn btn-primario" style="justify-content:center">Lançar</button></div>
@@ -716,7 +717,7 @@ function ligarLancar(depois) {
       const chave = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
       const conv = estado.convenios.find((c) => c.ativo && chave(c.nome) === chave(v.convenioNome));
       if (!conv) throw new Error('Convênio não encontrado. Comece a digitar e escolha um da lista.');
-      const r = await api('/api/lotes', { method: 'POST', corpo: { numeroLote: v.numeroLote.trim(), convenioId: conv.id, qtdGuias: 0,
+      const r = await api('/api/lotes', { method: 'POST', corpo: { numeroLote: v.numeroLote.trim(), convenioId: conv.id, qtdGuias: Number(v.qtdGuias || 0),
         valorTotal: valor, unidade: v.unidade.trim(), competencia: v.data.slice(0, 7), dataLancamento: v.data, faturistaId: estado.usuario.id } });
       avisar(`Lote ${v.numeroLote} (${v.unidade.trim()}) lançado na sua produção.${r.xmlAmarrados ? ' Ligado ao XML já registrado.' : ''}`);
     }
