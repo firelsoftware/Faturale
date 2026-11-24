@@ -441,7 +441,7 @@ function montarChat() {
       <header><button class="chat-voltar oculto" title="Voltar">‹</button><b id="chat-titulo">Mensagens</b><button class="chat-fechar" title="Fechar">×</button></header>
       <div id="chat-corpo"></div>
       <form id="chat-form" class="oculto"><div class="chat-anexo oculto" id="chat-anexo"></div>
-        <div class="chat-linha"><label class="chat-clipe" title="Anexar arquivo (até 20 MB)">📎<input type="file" name="arquivo" hidden accept=".pdf,.xml,.png,.jpg,.jpeg,.xlsx,.xls,.csv,.docx,.doc,.txt,.zip"></label>
+        <div class="chat-linha"><label class="chat-clipe" title="Anexar arquivo (até 20 MB): PDF, XML, imagem, planilha, Word, CSV, TXT ou ZIP">📎 <span>Anexar</span><input type="file" name="arquivo" hidden accept=".pdf,.xml,.png,.jpg,.jpeg,.xlsx,.xls,.csv,.docx,.doc,.txt,.zip"></label>
         <textarea name="texto" rows="1" placeholder="Escreva uma mensagem…" maxlength="2000"></textarea><button class="btn btn-primario">Enviar</button></div></form>
     </section>`);
   $('#chat-botao').addEventListener('click', () => { if (podePedirAvisos()) pedirAvisos(); chat.aberto ? fecharChat() : abrirChat(); });

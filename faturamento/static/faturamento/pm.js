@@ -151,9 +151,11 @@ export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
   const padraoEsperado = { ISOB: '4.01.00', HOB: '3.05.00' }[r.unidade];
   if (padraoEsperado && r.padrao && r.padrao !== padraoEsperado) obs('—', `Padrão TISS ${r.padrao}; o esperado para ${r.unidade} é ${padraoEsperado}.`);
 
-  // 41501144 fora das guias (o resto é apontado guia por guia)
+  // 41501144 fora das guias (o resto é apontado guia por guia). Só conta no codigoProcedimento:
+  // código TUSS escrito na descrição (ex.: "Gonioscopia (41301242)") é ignorado.
+  const ehCodigo = (xml, cod) => new RegExp(`<ans:codigoProcedimento>\\s*${cod}\\s*</ans:codigoProcedimento>`).test(xml);
   const foraDasGuias = t.replace(/<ans:guiaSP-SADT>[\s\S]*?<\/ans:guiaSP-SADT>/g, '');
-  if (foraDasGuias.includes(PROIBIDO)) r.avisosA.push({ guia: '—', texto: `${PROIBIDO} aparece fora das guias.` });
+  if (ehCodigo(foraDasGuias, PROIBIDO)) r.avisosA.push({ guia: '—', texto: `${PROIBIDO} aparece fora das guias.` });
 
   // Números de guia: todos, para a regra das duplicadas não criar outra repetição
   const todosNumeros = new Set([...t.matchAll(/<ans:numeroGuiaPrestador>\s*([^<\s]*)/g)].map((m) => m[1]));
@@ -179,10 +181,7 @@ export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
     vistos.add(numero);
 
     if (carteira === null || carteira === '') obs(numero, 'numeroCarteira vazio.');
-    if (guiaXml.includes(PROIBIDO)) {
-      const naDescricao = [...guiaXml.matchAll(/<ans:descricaoProcedimento>([^<]*)<\/ans:descricaoProcedimento>/g)].some((m) => m[1].includes(PROIBIDO));
-      r.avisosA.push({ guia: numero, texto: naDescricao ? `${PROIBIDO} aparece na descrição de um procedimento. Diga se pode mandar.` : `Código ${PROIBIDO} na guia. Ele não deveria estar lá.` });
-    }
+    if (ehCodigo(guiaXml, PROIBIDO)) r.avisosA.push({ guia: numero, texto: `Código ${PROIBIDO} na guia. Ele não deveria estar lá.` });
 
     // 1. tipoAtendimento 11 -> 04
     g = g.replace(/(<ans:tipoAtendimento>\s*)11(\s*<\/ans:tipoAtendimento>)/g, (_, a, b) => {
