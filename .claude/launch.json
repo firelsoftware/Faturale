@@ -4,8 +4,21 @@
     {
       "name": "faturale",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["manage.py", "runserver", "8000"],
+      "runtimeArgs": [
+        "manage.py",
+        "runserver",
+        "8000"
+      ],
       "port": 8000
+    },
+    {
+      "name": "faturale-local",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set DATABASE_URL=[SENHA]&& set FATURALE_MODO_DEMO=0&& .venv\\Scripts\\python.exe manage.py runserver 8001"
+      ],
+      "port": 8001
     }
   ]
 }

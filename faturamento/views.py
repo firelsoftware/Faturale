@@ -155,8 +155,10 @@ def cadastrar(request):
     login_ = str(d.get('login') or '').strip().lower()
     email = str(d.get('email') or '').strip()[:120]
     senha = str(d.get('senha') or '')
-    if not nome or not re.fullmatch(r'[a-z0-9._-]{3,30}', login_):
-        return erro('Preencha o nome e um usuário de 3 a 30 letras minúsculas, números ou ponto (ex.: maria.silva).')
+    if len(nome.split()) < 2:
+        return erro('Escreva o nome e o sobrenome (ex.: Fabrício Alves).')
+    if not re.fullmatch(r'[a-z0-9]+(\.[a-z0-9]+)+', login_) or len(login_) > 30:
+        return erro('O usuário deve ser nome.sobrenome, só letras minúsculas sem acento (ex.: fabricio.alves).')
     if email and not re.fullmatch(r'[^@\s]+@[^@\s]+\.[^@\s]+', email):
         return erro('E-mail inválido.')
     if len(senha) < 6 or senha == settings.FATURALE_SENHA_INICIAL:
@@ -504,7 +506,7 @@ def lote_json(l):
         'faturista_id': l.faturista_id, 'faturista': l.faturista.nome, 'qtd_guias': l.qtd_guias,
         'guias_texto': l.guias_texto, 'valor_total': float(l.valor_total), 'competencia': l.competencia,
         'periodo_inicio': iso(l.periodo_inicio), 'periodo_fim': iso(l.periodo_fim), 'tipo': l.tipo,
-        'prestador': l.prestador, 'status': l.status, 'observacao': l.observacao, 'arquivo': bool(l.arquivo),
+        'prestador': l.prestador, 'unidade': l.unidade, 'status': l.status, 'observacao': l.observacao, 'arquivo': bool(l.arquivo),
         'data_lancamento': iso(l.data_lancamento), 'demo': l.demo, 'xml': xml,
         'gerado_por': l.gerado_por, 'lancado_por': l.lancado_por.nome if l.lancado_por else None,
         'valor_convenio': float(v) if (v := divergencia(l)) is not None else None,
@@ -585,9 +587,9 @@ def validar_lote(d):
     if not str(d.get('numeroLote', '')).strip():
         return 'Informe o número do lote.'
     try:
-        if int(d.get('qtdGuias') or 0) <= 0:
+        if int(d.get('qtdGuias') or 0) < 0:
             return 'Quantidade de guias inválida.'
-        if Decimal(str(d.get('valorTotal'))) < 0:
+        if Decimal(str(d.get('valorTotal') or 0)) < 0:
             return 'Valor inválido.'
     except (ValueError, InvalidOperation):
         return 'Número inválido.'
@@ -600,8 +602,10 @@ def validar_lote(d):
 
 def preencher_lote(l, d):
     l.numero_lote = str(d['numeroLote']).strip()
-    l.qtd_guias = int(d['qtdGuias'])
-    l.valor_total = Decimal(str(d['valorTotal'])).quantize(Decimal('0.01'))
+    l.qtd_guias = int(d.get('qtdGuias') or 0)
+    l.valor_total = Decimal(str(d.get('valorTotal') or 0)).quantize(Decimal('0.01'))
+    if 'unidade' in d:
+        l.unidade = str(d.get('unidade') or '').strip()[:80]
     l.competencia = d['competencia']
     l.data_lancamento = para_data(d['dataLancamento'])
     l.periodo_inicio = para_data(d.get('periodoInicio'))

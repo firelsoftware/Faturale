@@ -17,20 +17,21 @@
       <div class="marca-sub">CONSULTORIA EM SAÚDE</div>
 
       <div class="entrada">
-        <div class="entrada-abas"><button type="button" data-entrada="entrar" class="ativa">Entrar</button><button type="button" data-entrada="cadastro">Cadastrar-se</button></div>
+        <h2 class="entrada-titulo" id="entrada-titulo">Entrar</h2>
 
         <form id="form-login">
-          <div class="campo"><label for="login">Usuário</label><input id="login" autocomplete="username" required placeholder="ex.: maria.silva"></div>
-          <div class="campo"><label for="senha">Senha</label><input id="senha" type="password" autocomplete="current-password" required></div>
+          <div class="campo"><label for="login">Usuário</label><input id="login" autocomplete="username" required placeholder="ex.: fabricio.alves"></div>
+          <div class="campo"><label for="senha">Senha</label><input id="senha" type="password" autocomplete="current-password" required placeholder="sua senha"></div>
           <button class="btn btn-primario" style="width:100%;justify-content:center">Entrar</button>
+          <p class="entrada-troca">Primeiro acesso? <button type="button" data-entrada="cadastro">Cadastre-se</button></p>
         </form>
 
         <form id="form-cadastro" class="oculto">
-          <div class="campo"><label>Nome completo</label><input name="nome" required maxlength="80" autocomplete="name"></div>
-          <div class="campo"><label>Usuário (para entrar)</label><input name="login" required pattern="[a-z0-9._\-]{3,30}" placeholder="ex.: maria.silva" autocomplete="username"></div>
-          <div class="campo"><label>E-mail</label><input name="email" type="email" maxlength="120" autocomplete="email"></div>
-          <div class="campo"><label>Senha (mínimo 6)</label><input name="senha" type="password" minlength="6" required autocomplete="new-password"></div>
-          <div class="campo"><label>Repita a senha</label><input name="confirmacao" type="password" minlength="6" required autocomplete="new-password"></div>
+          <div class="campo"><label>Nome e sobrenome</label><input name="nome" required maxlength="80" autocomplete="name" placeholder="ex.: Fabrício Alves" pattern=".*\S+\s+\S+.*" title="Escreva o nome e o sobrenome"></div>
+          <div class="campo"><label>Usuário (nome.sobrenome)</label><input name="login" required maxlength="30" pattern="[a-z0-9]+(\.[a-z0-9]+)+" title="nome.sobrenome, letras minúsculas sem acento (ex.: fabricio.alves)" placeholder="ex.: fabricio.alves" autocomplete="username"></div>
+          <div class="campo"><label>E-mail</label><input name="email" type="email" maxlength="120" autocomplete="email" placeholder="ex.: fabricio.alves@gmail.com"></div>
+          <div class="campo"><label>Senha</label><input name="senha" type="password" minlength="6" required autocomplete="new-password" placeholder="mínimo 6 caracteres"></div>
+          <div class="campo"><label>Repita a senha</label><input name="confirmacao" type="password" minlength="6" required autocomplete="new-password" placeholder="digite a senha de novo"></div>
           <fieldset class="pergunta-faturista">
             <legend>Você é faturista?</legend>
             <label><input type="radio" name="faturista" value="sim" required> Sim</label>
@@ -38,6 +39,7 @@
           </fieldset>
           <button class="btn btn-primario" style="width:100%;justify-content:center">Cadastrar</button>
           <p class="entrada-nota">Faturista entra na hora. Se não for, a coordenação escolhe o seu perfil e libera o acesso.</p>
+          <p class="entrada-troca">Já tem cadastro? <button type="button" data-entrada="entrar">Entrar</button></p>
         </form>
         <p class="ok-login oculto" id="ok-cadastro"></p>
       </div>

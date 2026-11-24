@@ -108,13 +108,22 @@ async function mostrarLogin() {
 }
 // Abas da entrada: Entrar / Cadastrar-se
 function trocarEntrada(qual) {
-  $$('[data-entrada]').forEach((b) => b.classList.toggle('ativa', b.dataset.entrada === qual));
+  $('#entrada-titulo').textContent = qual === 'cadastro' ? 'Primeiro acesso' : 'Entrar';
   $('#form-login').classList.toggle('oculto', qual !== 'entrar');
   $('#form-cadastro').classList.toggle('oculto', qual !== 'cadastro');
   $('#erro-login').textContent = '';
   if (qual === 'entrar') setTimeout(() => $('#login').focus(), 0);
 }
 $$('[data-entrada]').forEach((b) => b.addEventListener('click', () => { $('#ok-cadastro').classList.add('oculto'); trocarEntrada(b.dataset.entrada); }));
+const sugerirUsuario = (nome) => {
+  const partes = nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean);
+  return partes.length >= 2 ? `${partes[0]}.${partes[partes.length - 1]}` : partes[0] || '';
+};
+$('#form-cadastro [name=login]').addEventListener('input', (e) => { e.target.dataset.mexeu = '1'; });
+$('#form-cadastro [name=nome]').addEventListener('input', (e) => {
+  const login = $('#form-cadastro [name=login]');
+  if (!login.dataset.mexeu) login.value = sugerirUsuario(e.target.value);
+});
 $('#form-cadastro').addEventListener('submit', async (e) => {
   e.preventDefault();
   $('#erro-login').textContent = '';
@@ -122,6 +131,7 @@ $('#form-cadastro').addEventListener('submit', async (e) => {
     const r = await api('/api/cadastro', { method: 'POST', corpo: Object.fromEntries(new FormData(e.target)) });
     const usuario = e.target.login.value;
     e.target.reset();
+    delete e.target.login.dataset.mexeu;
     if (r.entrou) { // faturista: já entra
       estado.usuario = r;
       entrar();
@@ -632,12 +642,29 @@ function ligarLancarDoProtocolo(d, caixa, redesenhar, paraQuemAnexou = false) {
 // ---------- Quadro "Lançar produção" (sem arquivo) ----------
 // A pessoa digita nº do lote, convênio, guias e valor. Na Fatura vira um lote da produção dela;
 // no XML, um envio de XML na produção dela.
+// Unidades (hospitais) sugeridas no lançamento; dá para digitar outra
+const UNIDADES = ['DF Star', 'Hospital Santa Helena', 'Hospital do Coração do Brasil', 'Hospital Santa Luzia'];
 function cartaoLancar(tipo) {
   const campo = tipo === 'xml' ? 'xml_id' : 'faturista_id';
   const meus = estado.convenios.filter((c) => c.ativo && c[campo] === estado.usuario.id && (tipo !== 'xml' || c.tem_xml));
   const outros = estado.convenios.filter((c) => c.ativo && !meus.includes(c) && (tipo !== 'xml' || c.tem_xml));
   const opc = (l) => l.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
   const mes = hoje().slice(0, 7);
+  if (tipo !== 'xml') {
+    return `<div class="cartao lancar-cartao">
+    <h2>Lançar produção <small class="apagado">conta na sua produção</small></h2>
+    <form class="lancar" data-tipo="${tipo}">
+      <div class="campo"><label>Colaborador</label><input value="${esc(estado.usuario.nome)}" readonly tabindex="-1" class="campo-fixo"></div>
+      <div class="campo"><label>Lote</label><input name="numeroLote" required inputmode="numeric" placeholder="ex.: 365118"></div>
+      <div class="campo"><label>Convênio</label><select name="convenioId" required><option value="">ex.: Bradesco</option>
+        ${meus.length ? `<optgroup label="Meus convênios">${opc(meus)}</optgroup><optgroup label="Todos">${opc(outros)}</optgroup>` : opc(outros)}</select></div>
+      <div class="campo"><label>Unidade</label><input name="unidade" required list="lista-unidades" maxlength="80" placeholder="ex.: DF Star">
+        <datalist id="lista-unidades">${UNIDADES.map((x) => `<option value="${esc(x)}">`).join('')}</datalist></div>
+      <div class="campo"><label>Valor do protocolo <small class="apagado">(opcional)</small></label><input name="valor" inputmode="decimal" placeholder="ex.: 1.073,60"></div>
+      <div class="campo"><label>Data</label><input name="data" type="date" value="${hoje()}" required></div>
+      <div class="campo"><label>&nbsp;</label><button class="btn btn-primario" style="justify-content:center">Lançar</button></div>
+    </form></div>`;
+  }
   return `<div class="cartao lancar-cartao">
     <h2>Lançar produção <small class="apagado">digite os dados do lote · conta na sua produção de ${tipo === 'xml' ? 'XML' : 'fatura'}</small></h2>
     <form class="lancar" data-tipo="${tipo}">
@@ -657,15 +684,15 @@ function ligarLancar(depois) {
   form.addEventListener('submit', tentar(async (e) => {
     e.preventDefault();
     const v = Object.fromEntries(new FormData(form));
-    const valor = lerValor(v.valor);
+    const valor = form.dataset.tipo !== 'xml' && !String(v.valor || '').trim() ? 0 : lerValor(v.valor);
     if (Number.isNaN(valor) || valor < 0) throw new Error('Valor inválido.');
     if (form.dataset.tipo === 'xml') {
       const r = await api('/api/xml', { method: 'POST', corpo: { numeroLote: v.numeroLote.trim(), convenioId: v.convenioId, qtdGuias: v.qtdGuias, valorProtocolo: valor, dataEnvio: v.data } });
       avisar(`Lote ${r.numeroLote} lançado na sua produção de XML.${r.amarrado ? ' Já está ligado ao lote da Fatura.' : ''}`);
     } else {
-      const r = await api('/api/lotes', { method: 'POST', corpo: { numeroLote: v.numeroLote.trim(), convenioId: v.convenioId, qtdGuias: Number(v.qtdGuias),
-        valorTotal: valor, competencia: v.competencia, dataLancamento: v.data, faturistaId: estado.usuario.id } });
-      avisar(`Lote ${v.numeroLote} lançado na sua produção.${r.xmlAmarrados ? ' Ligado ao XML já registrado.' : ''}`);
+      const r = await api('/api/lotes', { method: 'POST', corpo: { numeroLote: v.numeroLote.trim(), convenioId: v.convenioId, qtdGuias: 0,
+        valorTotal: valor, unidade: v.unidade.trim(), competencia: v.data.slice(0, 7), dataLancamento: v.data, faturistaId: estado.usuario.id } });
+      avisar(`Lote ${v.numeroLote} (${v.unidade.trim()}) lançado na sua produção.${r.xmlAmarrados ? ' Ligado ao XML já registrado.' : ''}`);
     }
     depois();
   }));

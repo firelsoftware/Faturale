@@ -148,6 +148,7 @@ class Lote(models.Model):
     periodo_fim = models.DateField(null=True, blank=True)
     tipo = models.CharField(max_length=60, blank=True)
     prestador = models.CharField(max_length=160, blank=True)
+    unidade = models.CharField(max_length=80, blank=True)  # hospital/unidade (ex.: DF Star)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.LANCADO)
     observacao = models.TextField(blank=True)
     arquivo = models.FileField(upload_to='lotes/', blank=True)
