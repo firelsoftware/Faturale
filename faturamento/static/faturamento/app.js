@@ -651,7 +651,7 @@ function cartaoLancar(tipo) {
   const mes = hoje().slice(0, 7);
   if (tipo !== 'xml') {
     return `<div class="cartao lancar-cartao">
-    <h2>Lançar produção <small class="apagado">conta na sua produção</small></h2>
+    <h2>Lançar produção <small class="apagado">O sistema lê seu arquivo, mas se preferir digite</small></h2>
     <form class="lancar" data-tipo="${tipo}">
       <div class="campo"><label>Colaborador</label><input value="${esc(estado.usuario.nome)}" readonly tabindex="-1" class="campo-fixo"></div>
       <div class="campo"><label>Lote</label><input name="numeroLote" required inputmode="numeric" placeholder="ex.: 365118"></div>

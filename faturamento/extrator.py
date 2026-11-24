@@ -114,8 +114,6 @@ def analisar(linhas: list[str]) -> dict:
     valores = [para_decimal(v) for v in DINHEIRO.findall(linha_total)]
     if valores:
         valor_total = max(valores)
-    if not qtd_guias:
-        avisos.append('Quantidade de guias não encontrada.')
     if not valor_total:
         avisos.append('Valor total não encontrado.')
 
@@ -124,6 +122,18 @@ def analisar(linhas: list[str]) -> dict:
     guias_listadas = sum(1 for l in linhas if re.match(r'^\d{5,8}\s+[A-Za-zÀ-ÿ]', l))
     if guias_listadas and qtd_guias and abs(guias_listadas - qtd_guias) > max(2, qtd_guias * 0.05):
         avisos.append(f'O PDF lista {guias_listadas} guias, mas o total diz {guias_texto}. Confira.')
+    if not qtd_guias and guias_listadas:
+        # Foto/escaneado: o OCR às vezes some com a barra ("7/7" vira "77")
+        tk = re.search(r'\d+', re.split(r'protocolo', linha_total, flags=re.I)[-1]) if linha_total else None
+        tk = tk.group(0) if tk else ''
+        meio = len(tk) // 2
+        if len(tk) >= 2 and len(tk) % 2 == 0 and min(int(tk[:meio]), int(tk[meio:])) == guias_listadas:
+            guias_texto, qtd_guias = f'{tk[:meio]}/{tk[meio:]}', guias_listadas
+        else:
+            guias_texto, qtd_guias = f'{guias_listadas} contadas', guias_listadas
+            avisos.append(f'Não li o "Total do protocolo": contei {guias_listadas} guias nas linhas. Confira.')
+    if not qtd_guias:
+        avisos.append('Quantidade de guias não encontrada.')
 
     # Competência: o "Refer" (MM/AA) mais frequente; senão, o mês do período
     refs = Counter()
