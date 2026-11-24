@@ -8,6 +8,7 @@ class Usuario(AbstractUser):
         SUPERVISORA = 'supervisora', 'Supervisora'
         COORDENADORA = 'coordenadora', 'Coordenadora'
         DIRETOR = 'diretor', 'Diretor'
+        TI = 'ti', 'TI'
 
     perfil = models.CharField(max_length=20, choices=Perfil.choices, default=Perfil.FATURISTA)
     # Para a equipe (perfil faturista): o que a pessoa faz. A coordenação define no cadastro.
@@ -22,8 +23,13 @@ class Usuario(AbstractUser):
     trocar_senha = models.BooleanField('trocar a senha no próximo acesso', default=True)
     # Cadastro feito pela própria pessoa: só entra depois que a coordenação/supervisão liberar
     aguardando_liberacao = models.BooleanField('aguardando liberação', default=False)
+    # Resposta do cadastro "Você é faturista?" (sugere o perfil na hora de liberar)
+    diz_faturista = models.BooleanField(null=True, blank=True)
     # Última mensagem da conversa "Equipe toda" que a pessoa já viu (para contar as não lidas)
     equipe_lida_ate = models.PositiveIntegerField(default=0)
+
+    # Perfis que só enxergam a própria produção
+    SO_A_PROPRIA = ('faturista', 'ti')
 
     # Abas que cada perfil enxerga. A diretoria vê tudo.
     ABAS = {
@@ -31,6 +37,8 @@ class Usuario(AbstractUser):
         'supervisora': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao'],
         'coordenadora': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao', 'coordenacao'],
         'diretor': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao', 'coordenacao', 'diretoria'],
+        # TI: as abas da faturista + Usuários. NÃO vê a produção da equipe (TI também fatura: conflito de interesse)
+        'ti': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'usuarios'],
     }
 
     @property
@@ -39,16 +47,16 @@ class Usuario(AbstractUser):
 
     @property
     def faz_faturamento(self):
-        return self.perfil != 'faturista' or self.funcao in ('faturamento', 'ambos')
+        return self.perfil not in self.SO_A_PROPRIA or self.funcao in ('faturamento', 'ambos')
 
     @property
     def faz_xml(self):
-        return self.perfil != 'faturista' or self.funcao in ('xml', 'ambos')
+        return self.perfil not in self.SO_A_PROPRIA or self.funcao in ('xml', 'ambos')
 
     @property
     def abas(self):
         abas = list(self.ABAS.get(self.perfil, []))
-        if self.perfil == 'faturista':  # quem só passa XML não vê Faturamento, e vice-versa
+        if self.perfil in self.SO_A_PROPRIA:  # quem só passa XML não vê Faturamento, e vice-versa
             if not self.faz_faturamento:
                 abas.remove('faturamento')
             if not self.faz_xml:
@@ -56,12 +64,14 @@ class Usuario(AbstractUser):
         return abas
 
     def pode(self, aba):
+        if aba == 'usuarios':  # cuidar de usuários: gestão (coordenação, supervisão, diretoria) e TI
+            return 'usuarios' in self.abas or 'gestao' in self.abas
         return aba in self.abas
 
     @property
     def ve_todos(self):
-        """Faturista vê só o que é dela; os outros perfis veem a equipe."""
-        return self.perfil != self.Perfil.FATURISTA
+        """Faturista e TI veem só o que é deles; os outros perfis veem a equipe."""
+        return self.perfil not in self.SO_A_PROPRIA
 
     def __str__(self):
         return self.nome

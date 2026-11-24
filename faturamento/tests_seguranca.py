@@ -182,3 +182,62 @@ class ConfiguracaoTests(TestCase):
             with self.assertRaises(ImproperlyConfigured):
                 importlib.reload(s)
         importlib.reload(s)
+
+
+@override_settings(FATURALE_MODO_DEMO=False)
+class PerfilTiTests(TestCase):
+    """TI cuida dos usuários, mas não vê a produção da equipe (TI também fatura: conflito de interesse)."""
+
+    def setUp(self):
+        cache.clear()
+        mk = lambda login, perfil: Usuario.objects.create_user(login, password='Senha-Forte-123', first_name=login.title(),
+                                                                perfil=perfil, trocar_senha=False)
+        self.ti = mk('fabricio', 'ti')
+        self.coord = mk('thalita', 'coordenadora')
+        self.fat = mk('bia.lima', 'faturista')
+        conv = Convenio.objects.create(nome='Bradesco')
+        self.lote_bia = Lote.objects.create(numero_lote='777', convenio=conv, faturista=self.fat, qtd_guias=3,
+                                            valor_total=100, data_lancamento=date.today(), competencia='2026-11')
+        self.client.force_login(self.ti)
+
+    def post(self, url, dados):
+        return self.client.post(url, json.dumps(dados), content_type='application/json')
+
+    def test_ti_tem_aba_usuarios_e_nao_tem_gestao(self):
+        abas = self.client.get('/api/eu').json()['abas']
+        self.assertIn('usuarios', abas)
+        for proibida in ('gestao', 'producao', 'coordenacao', 'diretoria'):
+            self.assertNotIn(proibida, abas)
+
+    def test_ti_nao_ve_producao_da_equipe(self):
+        self.assertNotIn('777', [l['numero_lote'] for l in self.client.get('/api/lotes').json()])
+        self.assertNotIn('777', self.client.get('/api/relatorios/csv').content.decode())
+        self.assertEqual(self.client.get(f'/api/lotes/{self.lote_bia.id}/pdf').status_code, 403)
+        self.assertEqual(self.client.get('/api/relatorios/equipe').status_code, 403)
+        self.assertEqual(self.client.get('/api/relatorios/producao').status_code, 403)
+        self.assertEqual(self.client.get('/api/diretoria/painel').status_code, 403)
+
+    def test_ti_libera_cadastro_e_cuida_de_usuarios(self):
+        self.client.logout()
+        self.post('/api/cadastro', {'nome': 'Novo Colega', 'login': 'novo.colega', 'senha': 'Faturale#2026x',
+                                    'confirmacao': 'Faturale#2026x', 'faturista': 'sim'})
+        novo = Usuario.objects.get(username='novo.colega')
+        self.client.force_login(self.ti)
+        self.assertTrue(any('aguardando liberação' in a['titulo'] for a in self.client.get('/api/alertas').json()['alertas']))
+        self.assertEqual(self.post(f'/api/usuarios/{novo.id}/liberar', {'perfil': 'faturista', 'funcao': 'ambos'}).status_code, 200)
+        novo.refresh_from_db()
+        self.assertTrue(novo.is_active)
+        r = self.post('/api/usuarios', {'nome': 'Nova Coord', 'login': 'nova.coord', 'perfil': 'coordenadora'}).json()
+        self.assertTrue(r['senhaTemporaria'])
+        self.assertEqual(self.client.delete(f'/api/usuarios/{novo.id}').status_code, 200)
+
+    def test_coordenacao_nao_mexe_na_conta_de_ti(self):
+        self.client.force_login(self.coord)
+        r = self.client.put(f'/api/usuarios/{self.ti.id}', json.dumps({'perfil': 'faturista', 'ativo': False}),
+                            content_type='application/json')
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(self.client.delete(f'/api/usuarios/{self.ti.id}').status_code, 403)
+
+    def test_faturista_nao_libera_cadastro(self):
+        self.client.force_login(self.fat)
+        self.assertEqual(self.client.get('/api/usuarios').status_code, 403)

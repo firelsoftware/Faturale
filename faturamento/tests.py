@@ -21,29 +21,35 @@ class CadastroTests(TestCase):
         return self.post('/api/cadastro', {'nome': f'Pessoa {login}', 'login': login, 'senha': 'Faturale#2026x',
                                            'confirmacao': 'Faturale#2026x', 'faturista': faturista, **extra})
 
-    def test_faturista_entra_na_hora_com_padrao_de_producao(self):
+    def test_faturista_aguarda_liberacao_e_entra_depois(self):
         r = self.cadastro('maria.silva', 'sim')
         self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.json()['entrou'])
+        self.assertTrue(r.json()['aguardando'])
         u = Usuario.objects.get(username='maria.silva')
-        self.assertTrue(u.is_active)
-        self.assertFalse(u.aguardando_liberacao)
-        self.assertEqual((u.perfil, u.funcao), ('faturista', 'faturamento'))
-        self.assertEqual(self.client.get('/api/eu').status_code, 200)  # já está logada
+        self.assertFalse(u.is_active)
+        self.assertTrue(u.aguardando_liberacao)
+        self.assertTrue(u.diz_faturista)
+        self.assertEqual(self.client.get('/api/eu').status_code, 401)  # não entrou
+        r = self.post('/api/entrar', {'login': 'maria.silva', 'senha': 'Faturale#2026x'})
+        self.assertEqual(r.status_code, 403)
+        self.assertIn('liberação', r.json()['erro'])
+        # a coordenação libera como faturista: aí entra, no padrão de produção de faturista
+        self.client.force_login(self.thalita)
+        self.assertEqual(self.post(f'/api/usuarios/{u.id}/liberar', {'perfil': 'faturista', 'funcao': 'faturamento'}).status_code, 200)
+        self.client.logout()
+        self.assertEqual(self.post('/api/entrar', {'login': 'maria.silva', 'senha': 'Faturale#2026x'}).status_code, 200)
         self.assertIn('faturamento', self.client.get('/api/eu').json()['abas'])
 
     def test_nao_faturista_aguarda_e_coordenacao_recebe_aviso(self):
         r = self.cadastro('joao.souza', 'nao')
-        self.assertTrue(r.json()['aguardandoPerfil'])
+        self.assertTrue(r.json()['aguardando'])
         u = Usuario.objects.get(username='joao.souza')
         self.assertFalse(u.is_active)
         self.assertTrue(u.aguardando_liberacao)
-        r = self.post('/api/entrar', {'login': 'joao.souza', 'senha': 'Faturale#2026x'})
-        self.assertEqual(r.status_code, 403)
-        self.assertIn('perfil', r.json()['erro'])
+        self.assertIs(u.diz_faturista, False)
         self.client.force_login(self.thalita)
         alertas = self.client.get('/api/alertas').json()['alertas']
-        self.assertTrue(any('escolha de perfil' in a['titulo'] and 'Pessoa joao.souza' in a['itens'] for a in alertas))
+        self.assertTrue(any('aguardando liberação' in a['titulo'] and 'Pessoa joao.souza' in a['itens'] for a in alertas))
 
     def test_precisa_responder_a_pergunta(self):
         self.assertEqual(self.cadastro('ana', '').status_code, 400)
@@ -94,7 +100,7 @@ class CadastroTests(TestCase):
         self.assertIn('nome.sobrenome', r.json()['erro'])
         r = self.post('/api/cadastro', {'nome': 'Fabrício Alves', 'login': 'fabricio.alves', 'senha': 'Faturale#2026x', 'confirmacao': 'Faturale#2026x', 'faturista': 'sim'})
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()['nome'], 'Fabrício Alves')
+        self.assertEqual(Usuario.objects.get(username='fabricio.alves').first_name, 'Fabrício Alves')
 
     def test_lancar_producao_com_unidade_e_sem_valor(self):
         c = Convenio.objects.create(nome='Bradesco')

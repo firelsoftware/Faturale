@@ -18,7 +18,7 @@ const inicioAno = () => hoje().slice(0, 5) + '01-01';
 // Aceita "2.327,79", "2327,79" ou "2327.79"
 const lerValor = (t) => { t = String(t).trim(); return t.includes(',') ? Number(t.replace(/\./g, '').replace(',', '.')) : Number(t); };
 const valorBR = (v) => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const PERFIS = { publico: 'Consulta sem login', faturista: 'Faturista / XML', supervisora: 'Supervisora', coordenadora: 'Coordenadora', diretor: 'Diretor' };
+const PERFIS = { publico: 'Consulta sem login', faturista: 'Faturista / XML', supervisora: 'Supervisora', coordenadora: 'Coordenadora', diretor: 'Diretor', ti: 'TI' };
 const STATUS = { lancado: 'Lançado', conferido: 'Conferido', devolvido: 'Devolvido' };
 const XML = { enviado: 'XML enviado', pendente: 'XML pendente', na: 'Sem XML' };
 const FUNCOES = { faturamento: 'Fatura', xml: 'XML', ambos: 'Fatura e XML' };
@@ -77,14 +77,15 @@ const ICONES = {
   calendario: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>',
   convenios: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   pm: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 15l2 2 4-4"/>',
+  usuarios: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.2A6.5 6.5 0 0 1 21.5 20"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
 };
 const icone = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[n]}</svg>`;
-const NOMES_ABAS = { faturamento: 'Fatura', minha: 'Minha produção', xml: 'XML', calendario: 'Calendário', convenios: 'Convênios', pm: 'PM (XML)', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' };
+const NOMES_ABAS = { faturamento: 'Fatura', minha: 'Minha produção', xml: 'XML', calendario: 'Calendário', convenios: 'Convênios', pm: 'PM (XML)', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' , usuarios: 'Usuários' };
 
 // ---------- Estado ----------
 const estado = { usuario: null, convenios: [], faturistas: [], aba: null };
-const veTodos = () => estado.usuario?.perfil !== 'faturista';
+const veTodos = () => !['faturista', 'ti'].includes(estado.usuario?.perfil); // TI vê só a própria produção
 
 async function carregarListas() {
   [estado.convenios, estado.faturistas] = await Promise.all([api('/api/convenios'), api('/api/pessoas')]);
@@ -159,16 +160,10 @@ $('#form-cadastro').addEventListener('submit', async (e) => {
     e.target.reset();
     delete e.target.login.dataset.mexeu;
     $('#usuario-aviso').className = 'usuario-aviso oculto';
-    if (r.entrou) { // faturista: já entra
-      estado.usuario = r;
-      entrar();
-      avisar(`Bem-vindo(a), ${r.nome}! Seu usuário é ${r.login}.`);
-      return;
-    }
     trocarEntrada('entrar');
     $('#login').value = usuario;
     const ok = $('#ok-cadastro');
-    ok.textContent = 'Cadastro enviado! A coordenação vai escolher o seu perfil. Assim que liberar, entre com o seu usuário e senha.';
+    ok.textContent = 'Cadastro enviado! Assim que a TI, a coordenação ou a supervisão liberar, entre com o seu usuário e senha.';
     ok.classList.remove('oculto');
   } catch (err) { $('#erro-login').textContent = err.message; }
 });
@@ -257,7 +252,7 @@ async function entrar() {
   // Abre na aba "mais alta" do perfil (diretor → Diretoria…). Faturista/XML: Faturamento se fatura
   // algum convênio, senão Envio de XML.
   let aba = u.abas.filter((a) => !['calendario', 'convenios', 'minha'].includes(a)).pop();
-  if (u.perfil === 'faturista') aba = meusConvenios('faturista_id').length || !meusConvenios('xml_id').length ? 'faturamento' : 'xml';
+  if (['faturista', 'ti'].includes(u.perfil)) aba = meusConvenios('faturista_id').length || !meusConvenios('xml_id').length ? 'faturamento' : 'xml';
   if (!u.abas.includes(aba)) aba = u.abas[0];
   abrirAba(u.abas.includes(salva) ? salva : aba);
 }
@@ -273,7 +268,7 @@ function abrirAba(aba) {
   carregarAlertas();
   vivo.pendente = false;
   verificarMudancas();
-  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, convenios: telaConvenios, pm: telaPm, minha: telaMinha, gestao: telaGestao, producao: telaCoordenacao, coordenacao: telaCoordenacao, diretoria: telaDiretoria };
+  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, convenios: telaConvenios, pm: telaPm, minha: telaMinha, gestao: telaGestao, producao: telaCoordenacao, coordenacao: telaCoordenacao, diretoria: telaDiretoria , usuarios: telaUsuarios };
   tentar(telas[aba])();
 }
 
@@ -1535,6 +1530,12 @@ async function telaGestao() {
   await ({ lotes: gestaoLotes, usuarios: gestaoUsuarios }[subGestao] || gestaoLotes)();
 }
 
+// Aba Usuários (perfil TI): só o cadastro de pessoas, sem a produção da equipe
+async function telaUsuarios() {
+  $('#conteudo').innerHTML = `<div class="topo"><div><h1>Usuários</h1><p>Liberar cadastros, criar usuários e gerar senhas temporárias.</p></div></div><div id="sub"></div>`;
+  await gestaoUsuarios();
+}
+
 async function gestaoLotes() {
   $('#sub').innerHTML = `<div class="cartao">
     <h2>Lotes <span class="acoes"><button class="btn btn-perigo btn-mini" id="apagar-demo">Apagar dados de demonstração</button></span></h2>
@@ -1583,15 +1584,16 @@ async function gestaoUsuarios() {
   const pendentes = todos.filter((u) => u.aguardando);
   const usuarios = todos.filter((u) => !u.aguardando);
   // Quem pode dar qual perfil: diretoria todos; coordenação faturista e supervisora; supervisão faturista
-  const perfis = { diretor: ['faturista', 'supervisora', 'coordenadora', 'diretor'], coordenadora: ['faturista', 'supervisora'] }[estado.usuario.perfil] || ['faturista'];
+  const todosPerfis = ['faturista', 'supervisora', 'coordenadora', 'diretor', 'ti'];
+  const perfis = { diretor: todosPerfis, ti: todosPerfis, coordenadora: ['faturista', 'supervisora'] }[estado.usuario.perfil] || ['faturista'];
   // Excluir: coordenação, supervisão e diretoria (nunca o próprio usuário)
-  const podeExcluir = (u) => ['coordenadora', 'supervisora', 'diretor'].includes(estado.usuario.perfil) && perfis.includes(u.perfil) && u.id !== estado.usuario.id;
+  const podeExcluir = (u) => ['coordenadora', 'supervisora', 'diretor', 'ti'].includes(estado.usuario.perfil) && perfis.includes(u.perfil) && u.id !== estado.usuario.id;
   $('#sub').innerHTML = `${pendentes.length ? `<div class="cartao cadastros-pendentes">
-    <h2>Cadastros aguardando escolha de perfil <span class="chat-conta">${pendentes.length}</span></h2>
-    <p class="apagado" style="margin:-4px 0 10px">Responderam que não são faturistas. Escolha o perfil e libere o acesso.</p>
+    <h2>Cadastros aguardando liberação <span class="chat-conta">${pendentes.length}</span></h2>
+    <p class="apagado" style="margin:-4px 0 10px">Confira se a pessoa é da equipe, escolha o perfil e libere. Quem não for, recuse.</p>
     ${pendentes.map((u) => `<div class="pendente" data-id="${u.id}">
-      <div><b>${esc(u.nome)}</b><small>usuário <b>${esc(u.login)}</b>${u.email ? ` · ${esc(u.email)}` : ''} · ${dataBR(u.criado_em.slice(0, 10))}</small></div>
-      <label>Perfil <select data-perfil>${perfis.map((pf) => `<option value="${pf}">${PERFIS[pf]}</option>`).join('')}</select></label>
+      <div><b>${esc(u.nome)}</b><small>usuário <b>${esc(u.login)}</b>${u.email ? ` · ${esc(u.email)}` : ''} · ${dataBR(u.criado_em.slice(0, 10))} · ${u.diz_faturista === false ? 'disse que <b>não</b> é faturista' : 'disse que é faturista'}</small></div>
+      <label>Perfil <select data-perfil>${perfis.map((pf) => `<option value="${pf}" ${pf === 'faturista' && u.diz_faturista !== false ? 'selected' : ''}>${PERFIS[pf]}</option>`).join('')}</select></label>
       <label>Função <select data-funcao>${Object.entries(FUNCOES).map(([k, v]) => `<option value="${k}" ${u.funcao === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <div class="acoes"><button class="btn btn-perigo btn-mini" data-recusar>Recusar</button><button class="btn btn-primario btn-mini" data-liberar>Liberar acesso</button></div>
     </div>`).join('')}</div>` : ''}
