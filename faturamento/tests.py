@@ -187,3 +187,44 @@ class ConversasTests(TestCase):
         self.assertIn('Equipe toda', nomes)
         self.assertIn('Bia.Lima', nomes)
         self.assertNotIn(nunca.first_name, nomes)
+
+
+@override_settings(FATURALE_MODO_DEMO=False)
+class RegrasTests(TestCase):
+    def setUp(self):
+        mk = lambda login, perfil: Usuario.objects.create_user(login, password='Senha-Forte-123', first_name=login.title(),
+                                                                perfil=perfil, trocar_senha=False)
+        self.fat, self.coord, self.ti = mk('ana.souza', 'faturista'), mk('thalita', 'coordenadora'), mk('fabricio.alves', 'ti')
+        self.cassi = Convenio.objects.create(nome='Cassi')
+        self.dados = {'convenioId': self.cassi.id, 'unidade': 'ISOB', 'titulo': 'Novo pacote', 'codigoEnvio': '1.01.01.012',
+                      'descricao': 'Consulta em consultório', 'composicao': 'Inclui: 41301250 - Mapeamento de retina',
+                      'codigoAutorizacao': '10101012', 'precisaAutorizacao': 'sim'}
+
+    def test_coordenacao_e_ti_cadastram_faturista_so_le(self):
+        self.client.force_login(self.fat)
+        self.assertEqual(self.client.post('/api/regras', self.dados).status_code, 403)
+        for quem in (self.coord, self.ti):
+            self.client.force_login(quem)
+            self.assertEqual(self.client.post('/api/regras', self.dados).status_code, 200)
+        self.client.force_login(self.fat)
+        lista = self.client.get('/api/regras', {'convenio': 'cassi', 'unidade': 'isob'}).json()
+        self.assertEqual(len(lista), 2)
+        self.assertEqual((lista[0]['codigo_envio'], lista[0]['codigo_autorizacao'], lista[0]['precisa_autorizacao']), ('1.01.01.012', '10101012', True))
+        self.assertEqual(self.client.delete(f"/api/regras/{lista[0]['id']}").status_code, 403)
+
+    def test_filtra_por_unidade_e_vale_para_todas(self):
+        self.client.force_login(self.coord)
+        self.client.post('/api/regras', self.dados)
+        self.client.post('/api/regras', {**self.dados, 'unidade': '', 'titulo': 'Vale para todas'})
+        hob = self.client.get('/api/regras', {'convenio': 'Cassi', 'unidade': 'HOB'}).json()
+        self.assertEqual([r['titulo'] for r in hob], ['Vale para todas'])
+        isob = self.client.get('/api/regras', {'convenio': 'Cassi', 'unidade': 'ISOB'}).json()
+        self.assertEqual(len(isob), 2)
+
+    def test_imagem_so_png_jpg_e_regra_vazia_recusada(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_login(self.coord)
+        r = self.client.post('/api/regras', {**self.dados, 'imagem': SimpleUploadedFile('x.html', b'<script>alert(1)</script>', 'text/html')})
+        self.assertEqual(r.status_code, 400)
+        r = self.client.post('/api/regras', {'convenioId': self.cassi.id, 'unidade': 'ISOB'})
+        self.assertEqual(r.status_code, 400)

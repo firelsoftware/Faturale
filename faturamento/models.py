@@ -36,12 +36,12 @@ class Usuario(AbstractUser):
 
     # Abas que cada perfil enxerga. A diretoria vê tudo.
     ABAS = {
-        'faturista': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm'],
-        'supervisora': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao'],
-        'coordenadora': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao', 'coordenacao'],
-        'diretor': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'gestao', 'producao', 'coordenacao', 'diretoria'],
+        'faturista': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'regras', 'pm'],
+        'supervisora': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'regras', 'pm', 'gestao', 'producao'],
+        'coordenadora': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'regras', 'pm', 'gestao', 'producao', 'coordenacao'],
+        'diretor': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'regras', 'pm', 'gestao', 'producao', 'coordenacao', 'diretoria'],
         # TI: as abas da faturista + Usuários. NÃO vê a produção da equipe (TI também fatura: conflito de interesse)
-        'ti': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'pm', 'usuarios'],
+        'ti': ['faturamento', 'xml', 'minha', 'calendario', 'convenios', 'regras', 'pm', 'usuarios'],
     }
 
     @property
@@ -279,3 +279,28 @@ class DuvidaConvenio(models.Model):
 
     def __str__(self):
         return f'{self.convenio}: {self.texto[:40]}'
+
+
+class RegraConvenio(models.Model):
+    """Regra de faturamento de um convênio, por unidade (ex.: Cassi · ISOB: pacote, código na autorização).
+    Unidade em branco = vale para todas. Todos consultam; TI, coordenação, supervisão e diretoria editam."""
+    convenio = models.ForeignKey(Convenio, models.CASCADE, related_name='regras')
+    unidade = models.CharField(max_length=80, blank=True)
+    titulo = models.CharField('título', max_length=120, blank=True)  # ex.: Novo pacote
+    codigo_envio = models.CharField('código de envio para o convênio', max_length=40, blank=True)
+    descricao = models.TextField('descrição', blank=True)
+    composicao = models.TextField('composição do pacote', blank=True)
+    codigo_autorizacao = models.CharField('código na autorização', max_length=40, blank=True)
+    precisa_autorizacao = models.BooleanField(null=True, blank=True)
+    observacao = models.TextField('observação', blank=True)
+    imagem = models.FileField(upload_to='regras/', blank=True)
+    atualizado_por = models.ForeignKey(Usuario, models.SET_NULL, null=True, blank=True, related_name='+')
+    atualizado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['convenio__nome', 'unidade', 'id']
+        verbose_name = 'regra do convênio'
+        verbose_name_plural = 'regras dos convênios'
+
+    def __str__(self):
+        return f'{self.convenio} · {self.unidade or "todas"}: {self.titulo or self.codigo_envio}'

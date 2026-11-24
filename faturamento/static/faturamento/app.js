@@ -78,10 +78,11 @@ const ICONES = {
   convenios: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
   pm: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M9 15l2 2 4-4"/>',
   usuarios: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.2A6.5 6.5 0 0 1 21.5 20"/>',
+  regras: '<path d="M9 3h6a1 1 0 0 1 1 1v1h2a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h2V4a1 1 0 0 1 1-1z"/><path d="M9 11h6M9 15h4"/>',
   upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
 };
 const icone = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONES[n]}</svg>`;
-const NOMES_ABAS = { faturamento: 'Fatura', minha: 'Minha produção', xml: 'XML', calendario: 'Calendário', convenios: 'Convênios', pm: 'PM (XML)', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' , usuarios: 'Usuários' };
+const NOMES_ABAS = { faturamento: 'Fatura', minha: 'Minha produção', xml: 'XML', calendario: 'Calendário', convenios: 'Convênios', regras: 'Regras', pm: 'PM (XML)', gestao: 'Gestão', producao: 'Relatórios', coordenacao: 'Coordenação', diretoria: 'Diretoria' , usuarios: 'Usuários' };
 
 // ---------- Estado ----------
 const estado = { usuario: null, convenios: [], faturistas: [], aba: null };
@@ -298,7 +299,7 @@ function abrirAba(aba) {
   carregarAlertas();
   vivo.pendente = false;
   verificarMudancas();
-  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, convenios: telaConvenios, pm: telaPm, minha: telaMinha, gestao: telaGestao, producao: telaCoordenacao, coordenacao: telaCoordenacao, diretoria: telaDiretoria , usuarios: telaUsuarios };
+  const telas = { faturamento: telaFaturamento, xml: telaXml, calendario: telaCalendario, convenios: telaConvenios, pm: telaPm, minha: telaMinha, gestao: telaGestao, producao: telaCoordenacao, coordenacao: telaCoordenacao, diretoria: telaDiretoria , usuarios: telaUsuarios , regras: telaRegras };
   tentar(telas[aba])();
 }
 
@@ -713,7 +714,7 @@ function cartaoLancar(tipo) {
       <div class="campo"><label>Valor do protocolo <small class="apagado">(opcional)</small></label><input name="valor" inputmode="decimal" placeholder="ex.: 1.073,60"></div>
       <div class="campo"><label>Data</label><input name="data" type="date" value="${hoje()}" required></div>
       <div class="campo"><label>&nbsp;</label><button class="btn btn-primario" style="justify-content:center">Lançar</button></div>
-    </form></div>`;
+    </form><div id="regras-lancar"></div></div>`;
   }
   return `<div class="cartao lancar-cartao">
     <h2>Lançar produção <small class="apagado">digite os dados do lote · conta na sua produção de ${tipo === 'xml' ? 'XML' : 'fatura'}</small></h2>
@@ -731,6 +732,7 @@ function cartaoLancar(tipo) {
 function ligarLancar(depois) {
   const form = $('form.lancar');
   if (!form) return;
+  ligarRegrasNoLancar(form);
   form.addEventListener('submit', tentar(async (e) => {
     e.preventDefault();
     const v = Object.fromEntries(new FormData(form));
@@ -1982,6 +1984,121 @@ function mostrarPm() {
     <p class="apagado">"Pronto" quer dizer só que o XML foi corrigido pelas regras e não caiu em aviso A, B ou C. O sistema não sabe se o convênio aceitou o lote.</p>
     <div class="pm-grupos">${grupo('pronto', 'Prontos para levar')}${grupo('aberto', 'Com exame aberto (não mexer)')}${grupo('decisao', 'Aguardando sua decisão')}</div>`;
   $('#pm-limpar')?.addEventListener('click', () => { if (confirm('Limpar a lista de lotes da remessa?')) { gravarListaPm([]); mostrarPm(); } });
+}
+
+// ---------- Aba: Regras dos convênios ----------
+const EDITAM_REGRAS = ['coordenadora', 'supervisora', 'diretor', 'ti'];
+const filtroRegras = { convenio: '', unidade: '' };
+
+function cartaoRegra(r, editar) {
+  const aut = r.precisa_autorizacao === true ? 'Sim' : r.precisa_autorizacao === false ? 'Não' : '';
+  const linhaTabela = r.codigo_envio || r.descricao || r.composicao;
+  return `<div class="cartao regra" data-id="${r.id}">
+    <h2>${esc(r.convenio)} <small class="apagado">${r.unidade ? `unidade ${esc(r.unidade)}` : 'todas as unidades'}</small>
+      ${editar ? `<span class="acoes"><button class="btn btn-claro btn-mini" data-editar-regra>Editar</button><button class="btn btn-perigo btn-mini" data-apagar-regra>Apagar</button></span>` : ''}</h2>
+    ${r.titulo ? `<h3 class="regra-titulo">${esc(r.titulo)}</h3>` : ''}
+    ${linhaTabela ? `<div class="tabela-caixa"><table class="regra-tabela"><thead><tr><th>Código de envio para o convênio</th><th>Descrição</th><th>Composição do pacote</th></tr></thead>
+      <tbody><tr><td class="regra-codigo">${esc(r.codigo_envio)}</td><td>${esc(r.descricao)}</td><td class="regra-texto">${esc(r.composicao)}</td></tr></tbody></table></div>` : ''}
+    <div class="regra-dados">
+      ${r.codigo_autorizacao ? `<div><span>Código na autorização</span><b>${esc(r.codigo_autorizacao)}</b></div>` : ''}
+      ${aut ? `<div><span>Precisa de autorização</span><b>${aut}</b></div>` : ''}
+    </div>
+    ${r.observacao ? `<p class="regra-texto">${esc(r.observacao)}</p>` : ''}
+    ${r.imagem ? `<a href="/api/regras/${r.id}/imagem" target="_blank" rel="noopener"><img class="regra-imagem" src="/api/regras/${r.id}/imagem" alt="Imagem da regra"></a>` : ''}
+    <p class="apagado regra-rodape">${r.atualizado_por ? `Atualizado por ${esc(r.atualizado_por)} em ${dataBR(String(r.atualizado_em).slice(0, 10))}` : ''}</p>
+  </div>`;
+}
+
+function formRegra(r = {}) {
+  const sel = (v) => (r.precisa_autorizacao === v ? 'selected' : '');
+  return `<form class="form-regra">
+    <div class="grade">
+      <div class="campo"><label>Convênio</label><input name="convenioNome" list="lista-convenios-regra" required value="${esc(r.convenio || '')}" placeholder="ex.: Cassi">
+        <datalist id="lista-convenios-regra">${estado.convenios.filter((c) => c.ativo).map((c) => `<option value="${esc(c.nome)}">`).join('')}</datalist></div>
+      <div class="campo"><label>Unidade <small class="apagado">(em branco = todas)</small></label><input name="unidade" maxlength="80" value="${esc(r.unidade || '')}" placeholder="ex.: ISOB"></div>
+      <div class="campo"><label>Título</label><input name="titulo" maxlength="120" value="${esc(r.titulo || '')}" placeholder="ex.: Novo pacote"></div>
+      <div class="campo"><label>Código de envio para o convênio</label><input name="codigoEnvio" maxlength="40" value="${esc(r.codigo_envio || '')}" placeholder="ex.: 1.01.01.012"></div>
+      <div class="campo"><label>Código na autorização</label><input name="codigoAutorizacao" maxlength="40" value="${esc(r.codigo_autorizacao || '')}" placeholder="ex.: 10101012"></div>
+      <div class="campo"><label>Precisa de autorização?</label><select name="precisaAutorizacao"><option value="">Não informado</option><option value="sim" ${sel(true)}>Sim</option><option value="nao" ${sel(false)}>Não</option></select></div>
+    </div>
+    <div class="campo"><label>Descrição</label><textarea name="descricao" rows="2" placeholder="ex.: Consulta em consultório (no horário normal ou preestabelecido)">${esc(r.descricao || '')}</textarea></div>
+    <div class="campo"><label>Composição do pacote</label><textarea name="composicao" rows="3" placeholder="ex.: Inclui honorários médicos: 41301250 - Mapeamento de retina; 41301323 - Tonometria">${esc(r.composicao || '')}</textarea></div>
+    <div class="campo"><label>Observação</label><textarea name="observacao" rows="2">${esc(r.observacao || '')}</textarea></div>
+    <div class="campo"><label>Imagem <small class="apagado">(opcional, PNG ou JPG até 5 MB)</small></label><input type="file" name="imagem" accept="image/png,image/jpeg">
+      ${r.imagem ? '<label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" name="tirarImagem" value="1" style="width:auto"> Tirar a imagem atual</label>' : ''}</div>
+    <div class="rodape"><button type="button" class="btn btn-claro" data-fechar>Cancelar</button><button class="btn btn-primario">Salvar</button></div></form>`;
+}
+
+async function salvarRegra(form, id) {
+  const fd = new FormData(form);
+  const chave = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const conv = estado.convenios.find((c) => chave(c.nome) === chave(fd.get('convenioNome')));
+  if (!conv) throw new Error('Convênio não encontrado. Comece a digitar e escolha um da lista.');
+  fd.set('convenioId', conv.id);
+  if (!fd.get('imagem')?.size) fd.delete('imagem');
+  return api(id ? `/api/regras/${id}` : '/api/regras', { method: 'POST', body: fd });
+}
+
+async function telaRegras() {
+  const editar = EDITAM_REGRAS.includes(estado.usuario.perfil);
+  $('#conteudo').innerHTML = `
+    <div class="topo"><div><h1>Regras dos convênios</h1><p>Escolha o convênio e a unidade para ver o pacote, os códigos e o que precisa na autorização.</p></div>
+      ${editar ? '<button class="btn btn-primario" id="nova-regra">Nova regra</button>' : ''}</div>
+    <div class="cartao"><div class="filtros">
+      <div class="campo"><label>Convênio</label><input id="r-conv" list="lista-convenios-filtro" placeholder="ex.: Cassi" value="${esc(filtroRegras.convenio)}">
+        <datalist id="lista-convenios-filtro">${estado.convenios.filter((c) => c.ativo).map((c) => `<option value="${esc(c.nome)}">`).join('')}</datalist></div>
+      <div class="campo"><label>Unidade</label><input id="r-unid" placeholder="ex.: ISOB" value="${esc(filtroRegras.unidade)}"></div>
+    </div></div>
+    <div id="r-lista"></div>`;
+  const carregar = tentar(async () => {
+    filtroRegras.convenio = $('#r-conv').value.trim();
+    filtroRegras.unidade = $('#r-unid').value.trim();
+    const lista = await api(`/api/regras?${qs({ convenio: filtroRegras.convenio, unidade: filtroRegras.unidade })}`);
+    $('#r-lista').innerHTML = lista.length ? lista.map((r) => cartaoRegra(r, editar)).join('')
+      : `<div class="cartao"><div class="vazio">${filtroRegras.convenio ? 'Nenhuma regra cadastrada para este convênio e unidade.' : 'Nenhuma regra cadastrada ainda.'}</div></div>`;
+    $('#r-lista').onclick = tentar(async (e) => {
+      const card = e.target.closest('.regra');
+      if (!card) return;
+      const r = lista.find((x) => x.id === Number(card.dataset.id));
+      if (e.target.closest('[data-apagar-regra]')) {
+        if (!confirm(`Apagar a regra de ${r.convenio}${r.unidade ? ` (${r.unidade})` : ''}?`)) return;
+        await api(`/api/regras/${r.id}`, { method: 'DELETE' });
+        avisar('Regra apagada.'); carregar();
+      } else if (e.target.closest('[data-editar-regra]')) {
+        modal(`<h2>Editar regra</h2>${formRegra(r)}`, (el, fechar) => $('form', el).addEventListener('submit', tentar(async (ev) => {
+          ev.preventDefault(); await salvarRegra(ev.target, r.id); fechar(); avisar('Regra salva.'); carregar();
+        })));
+      }
+    });
+  });
+  let t = null;
+  ['#r-conv', '#r-unid'].forEach((s) => $(s).addEventListener('input', () => { clearTimeout(t); t = setTimeout(carregar, 300); }));
+  $('#nova-regra')?.addEventListener('click', () => modal(`<h2>Nova regra</h2>${formRegra({ convenio: filtroRegras.convenio, unidade: filtroRegras.unidade })}`,
+    (el, fechar) => $('form', el).addEventListener('submit', tentar(async (ev) => {
+      ev.preventDefault(); await salvarRegra(ev.target); fechar(); avisar('Regra salva.'); carregar();
+    }))));
+  carregar();
+}
+
+// No "Lançar produção": ao escolher convênio + unidade, mostra as regras logo abaixo
+let regrasLancarTimer = null;
+function ligarRegrasNoLancar(form) {
+  const caixa = $('#regras-lancar');
+  if (!form || !caixa) return;
+  const atualizar = () => {
+    clearTimeout(regrasLancarTimer);
+    regrasLancarTimer = setTimeout(async () => {
+      const conv = form.convenioNome?.value.trim();
+      if (!conv) { caixa.innerHTML = ''; return; }
+      try {
+        const lista = await api(`/api/regras?${qs({ convenio: conv, unidade: form.unidade?.value.trim() })}`);
+        caixa.innerHTML = lista.length ? `<div class="regras-lancar"><b>Regras de ${esc(lista[0].convenio)}</b>${lista.map((r) => cartaoRegra(r, false)).join('')}</div>` : '';
+      } catch { caixa.innerHTML = ''; }
+    }, 350);
+  };
+  form.convenioNome?.addEventListener('input', atualizar);
+  form.unidade?.addEventListener('input', atualizar);
+  form.addEventListener('reset', () => { caixa.innerHTML = ''; });
 }
 
 const ROTULOS_POR = { dia: 'Dia', mes: 'Mês', ano: 'Ano', convenio: 'Convênio', competencia: 'Competência', faturista: 'Faturista' };

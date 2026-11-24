@@ -23,7 +23,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from .extrator import extrair_lote, ler_protocolo_xml
 from .seguranca import contar, excedeu, ip_do_cliente, log, senha_temporaria, zerar
 from .management.commands.semear import normalizar
-from .models import Convenio, DuvidaConvenio, EntregaCalendario, EnvioXml, Feriado, Lote, Mensagem, Usuario
+from .models import Convenio, DuvidaConvenio, EntregaCalendario, EnvioXml, Feriado, Lote, Mensagem, RegraConvenio, Usuario
 
 
 # ---------- Utilidades ----------
@@ -1679,3 +1679,92 @@ def producao_equipe(request):
     linhas.sort(key=lambda r: -(r['fatura']['valor'] + r['xml']['valor']))
     return JsonResponse(linhas, safe=False)
 
+
+
+# ---------- Regras dos convênios (por unidade) ----------
+EDITAM_REGRAS = ('coordenadora', 'supervisora', 'diretor', 'ti')
+TIPOS_IMAGEM = {'.png', '.jpg', '.jpeg'}
+
+
+def regra_json(r):
+    return {'id': r.id, 'convenio_id': r.convenio_id, 'convenio': r.convenio.nome, 'unidade': r.unidade,
+            'titulo': r.titulo, 'codigo_envio': r.codigo_envio, 'descricao': r.descricao, 'composicao': r.composicao,
+            'codigo_autorizacao': r.codigo_autorizacao, 'precisa_autorizacao': r.precisa_autorizacao,
+            'observacao': r.observacao, 'imagem': bool(r.imagem),
+            'atualizado_em': r.atualizado_em.isoformat() if r.atualizado_em else None,
+            'atualizado_por': r.atualizado_por.nome if r.atualizado_por else None}
+
+
+def aplicar_regra(r, d, arquivo, u):
+    """Campos vindos do formulário (multipart). Imagem: só PNG/JPG até 5 MB."""
+    conv = Convenio.objects.filter(pk=d.get('convenioId') or r.convenio_id).first()
+    if not conv:
+        raise ValueError('Escolha o convênio.')
+    r.convenio = conv
+    corta = lambda k, n: str(d.get(k) or '').strip()[:n]
+    r.unidade, r.titulo = corta('unidade', 80), corta('titulo', 120)
+    r.codigo_envio, r.codigo_autorizacao = corta('codigoEnvio', 40), corta('codigoAutorizacao', 40)
+    r.descricao, r.composicao, r.observacao = corta('descricao', 4000), corta('composicao', 4000), corta('observacao', 4000)
+    r.precisa_autorizacao = {'sim': True, 'nao': False}.get(str(d.get('precisaAutorizacao') or ''))
+    if not (r.titulo or r.codigo_envio or r.descricao or r.composicao or r.codigo_autorizacao or r.observacao or arquivo or r.imagem):
+        raise ValueError('Preencha pelo menos uma informação da regra.')
+    r.atualizado_por = u
+    if d.get('tirarImagem') == '1' and r.imagem:
+        r.imagem.delete(save=False)
+    if arquivo:
+        ext = Path(arquivo.name).suffix.lower()
+        if ext not in TIPOS_IMAGEM or arquivo.size > 5 * 1024 * 1024:
+            raise ValueError('Imagem: envie PNG ou JPG de até 5 MB.')
+        if r.imagem:
+            r.imagem.delete(save=False)
+        r.imagem.save(f'regra-{conv.id}{ext}', arquivo, save=False)
+
+
+@api('regras', ('GET', 'POST'))
+def regras(request):
+    if request.method == 'GET':
+        q = request.GET
+        qs = RegraConvenio.objects.select_related('convenio', 'atualizado_por')
+        if q.get('convenio'):
+            qs = qs.filter(convenio_id=q['convenio']) if str(q['convenio']).isdigit() else qs.filter(convenio__nome__iexact=q['convenio'].strip())
+        if q.get('unidade'):
+            qs = qs.filter(Q(unidade='') | Q(unidade__iexact=q['unidade'].strip()))
+        return JsonResponse([regra_json(r) for r in qs[:300]], safe=False)
+    if request.user.perfil not in EDITAM_REGRAS:
+        return erro('Só TI, coordenação, supervisão ou diretoria editam as regras.', 403)
+    r = RegraConvenio()
+    try:
+        aplicar_regra(r, request.POST, request.FILES.get('imagem'), request.user)
+    except ValueError as e:
+        return erro(str(e))
+    r.save()
+    return JsonResponse(regra_json(r))
+
+
+@api('regras', ('POST', 'DELETE'))
+def regra(request, pk):
+    """POST = salvar alterações (multipart, por causa da imagem); DELETE = apagar."""
+    r = RegraConvenio.objects.select_related('convenio').filter(pk=pk).first()
+    if not r:
+        return erro('Regra não encontrada.', 404)
+    if request.user.perfil not in EDITAM_REGRAS:
+        return erro('Só TI, coordenação, supervisão ou diretoria editam as regras.', 403)
+    if request.method == 'DELETE':
+        if r.imagem:
+            r.imagem.delete(save=False)
+        r.delete()
+        return JsonResponse({'ok': True})
+    try:
+        aplicar_regra(r, request.POST, request.FILES.get('imagem'), request.user)
+    except ValueError as e:
+        return erro(str(e))
+    r.save()
+    return JsonResponse(regra_json(r))
+
+
+@api('regras')
+def regra_imagem(request, pk):
+    r = RegraConvenio.objects.filter(pk=pk).first()
+    if not r or not r.imagem:
+        return erro('Sem imagem.', 404)
+    return servir_arquivo(r.imagem, f'regra-{r.id}')
