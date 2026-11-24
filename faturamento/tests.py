@@ -118,10 +118,10 @@ class CadastroTests(TestCase):
         Usuario.objects.create_user('fabricio.alves', password='x', first_name='Fabrício Alves', perfil='faturista')
         # o sistema avisa e sugere outro sobrenome livre
         r = self.client.get('/api/cadastro/usuario', {'login': 'fabricio.alves', 'nome': 'Fabrício da Silva Alves'}).json()
-        self.assertEqual(r, {'livre': False, 'sugestao': 'fabricio.silva'})
+        self.assertEqual((r['livre'], r['sugestao']), (False, 'fabricio.silva'))
         # só um sobrenome: não inventa número, a pessoa digita outro sobrenome dela
         r = self.client.get('/api/cadastro/usuario', {'login': 'fabricio.alves', 'nome': 'Fabrício Alves'}).json()
-        self.assertEqual(r, {'livre': False, 'sugestao': ''})
+        self.assertEqual((r['livre'], r['sugestao']), (False, ''))
         self.assertTrue(self.client.get('/api/cadastro/usuario', {'login': 'fabricio.silva'}).json()['livre'])
         # cadastrar com o usuário repetido é recusado com a sugestão
         r = self.post('/api/cadastro', {'nome': 'Fabrício Silva Alves', 'login': 'fabricio.alves', 'senha': 'Faturale#2026x',
@@ -177,3 +177,13 @@ class ConversasTests(TestCase):
         self.assertEqual(self.post({'com': self.bia.id, 'texto': '   '}).status_code, 400)
         self.assertEqual(self.post({'com': 99999, 'texto': 'oi'}).status_code, 404)
         self.assertEqual(self.post({'com': self.ana.id, 'texto': 'eu mesma'}).status_code, 404)
+
+    def test_chat_so_mostra_quem_ja_entrou(self):
+        nunca = Usuario.objects.create_user('nunca.entrou', password='Senha-Forte-123', first_name='Nunca Entrou',
+                                            perfil='faturista', trocar_senha=False)
+        self.client.force_login(self.bia)  # bia entra: passa a aparecer para os outros
+        self.client.force_login(self.ana)
+        nomes = [c['nome'] for c in self.client.get('/api/mensagens/conversas').json()]
+        self.assertIn('Equipe toda', nomes)
+        self.assertIn('Bia.Lima', nomes)
+        self.assertNotIn(nunca.first_name, nomes)

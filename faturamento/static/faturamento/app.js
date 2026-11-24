@@ -131,10 +131,19 @@ const conferirUsuario = () => {
     const login = $('#form-cadastro [name=login]');
     const aviso = $('#usuario-aviso');
     const valor = login.value.trim().toLowerCase();
-    if (!/^[a-z0-9]+(\.[a-z0-9]+)+$/.test(valor)) { aviso.classList.add('oculto'); return; }
+    if (!/^[a-z0-9]+(\.[a-z0-9]+)+$/.test(valor)) {
+      aviso.classList.add('oculto');
+      // Ainda sem sobrenome: só confere se o nome é de quem já tem perfil (coordenação, supervisão, diretoria)
+      const nomeDigitado = $('#form-cadastro [name=nome]').value;
+      if (nomeDigitado.trim().length >= 3) {
+        try { mostrarReservado((await (await fetch(`/api/cadastro/usuario?${qs({ nome: nomeDigitado })}`)).json()).reservado); } catch { /* sem rede: segue */ }
+      } else mostrarReservado(null);
+      return;
+    }
     let r;
     try { r = await (await fetch(`/api/cadastro/usuario?${qs({ login: valor, nome: $('#form-cadastro [name=nome]').value })}`)).json(); } catch { return; }
     if (login.value.trim().toLowerCase() !== valor) return; // a pessoa já mudou
+    mostrarReservado(r.reservado);
     if (r.livre) { aviso.className = 'usuario-aviso ok'; aviso.textContent = `✓ ${valor} está livre`; return; }
     aviso.className = 'usuario-aviso ocupado';
     if (r.sugestao && !login.dataset.mexeu) {
@@ -146,6 +155,25 @@ const conferirUsuario = () => {
   }, 350);
 };
 $('#form-cadastro [name=login]').addEventListener('input', (e) => { e.target.dataset.mexeu = '1'; conferirUsuario(); });
+// Coordenação, supervisão e diretoria já têm perfil: ao digitar o nome, pergunta se é a pessoa
+let reservadoRecusado = '';
+function mostrarReservado(r) {
+  const caixa = $('#reservado');
+  const campo = $('#form-cadastro [name=reivindica]');
+  if (!r || reservadoRecusado === r.nome) { caixa.classList.add('oculto'); campo.value = ''; return; }
+  if (campo.value === 'sim') return; // já respondeu "Sim, sou eu"
+  caixa.innerHTML = `<p>Olá, <b>${esc(r.nome)}</b>! Você é ${esc(r.pergunta)}?</p>
+    <div class="reservado-acoes"><button type="button" class="btn btn-primario btn-mini" data-reservado="sim">Sim, sou eu</button>
+    <button type="button" class="btn btn-claro btn-mini" data-reservado="nao">Não</button></div>`;
+  caixa.classList.remove('oculto');
+  caixa.onclick = (e) => {
+    const b = e.target.closest('[data-reservado]');
+    if (!b) return;
+    if (b.dataset.reservado === 'nao') { reservadoRecusado = r.nome; campo.value = ''; caixa.classList.add('oculto'); return; }
+    campo.value = 'sim';
+    caixa.innerHTML = `<p>Ótimo, ${esc(r.nome)}! Continue o cadastro com o seu usuário e a sua senha. O TI confirma que é você e libera o seu perfil ${esc(r.funcao)}.</p>`;
+  };
+}
 $('#form-cadastro [name=nome]').addEventListener('input', (e) => {
   const login = $('#form-cadastro [name=login]');
   if (!login.dataset.mexeu) login.value = sugerirUsuario(e.target.value);
@@ -163,7 +191,9 @@ $('#form-cadastro').addEventListener('submit', async (e) => {
     trocarEntrada('entrar');
     $('#login').value = usuario;
     const ok = $('#ok-cadastro');
-    ok.textContent = 'Cadastro enviado! Assim que a TI, a coordenação ou a supervisão liberar, entre com o seu usuário e senha.';
+    ok.textContent = r.aguardando && $('#form-cadastro [name=reivindica]').value === 'sim'
+      ? 'Cadastro enviado! O TI vai confirmar que é você e liberar o seu perfil. Depois, entre com o seu usuário e senha.'
+      : 'Cadastro enviado! Assim que a TI, a coordenação ou a supervisão liberar, entre com o seu usuário e senha.';
     ok.classList.remove('oculto');
   } catch (err) { $('#erro-login').textContent = err.message; }
 });
@@ -1593,9 +1623,10 @@ async function gestaoUsuarios() {
     <p class="apagado" style="margin:-4px 0 10px">Confira se a pessoa é da equipe, escolha o perfil e libere. Quem não for, recuse.</p>
     ${pendentes.map((u) => `<div class="pendente" data-id="${u.id}">
       <div><b>${esc(u.nome)}</b><small>usuário <b>${esc(u.login)}</b>${u.email ? ` · ${esc(u.email)}` : ''} · ${dataBR(u.criado_em.slice(0, 10))} · ${u.diz_faturista === false ? 'disse que <b>não</b> é faturista' : 'disse que é faturista'}</small></div>
-      <label>Perfil <select data-perfil>${perfis.map((pf) => `<option value="${pf}" ${pf === 'faturista' && u.diz_faturista !== false ? 'selected' : ''}>${PERFIS[pf]}</option>`).join('')}</select></label>
-      <label>Função <select data-funcao>${Object.entries(FUNCOES).map(([k, v]) => `<option value="${k}" ${u.funcao === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
-      <div class="acoes"><button class="btn btn-perigo btn-mini" data-recusar>Recusar</button><button class="btn btn-primario btn-mini" data-liberar>Liberar acesso</button></div>
+      ${u.reivindica ? `<div class="reivindica">Diz que é <b>${esc(u.reivindica.nome)}</b> (${esc(PERFIS[u.reivindica.perfil])}). ${estado.usuario.perfil === 'ti' ? 'Confirmando, esta pessoa assume esse perfil.' : 'Só o TI confirma.'}</div>`
+        : `<label>Perfil <select data-perfil>${perfis.map((pf) => `<option value="${pf}" ${pf === 'faturista' && u.diz_faturista !== false ? 'selected' : ''}>${PERFIS[pf]}</option>`).join('')}</select></label>
+      <label>Função <select data-funcao>${Object.entries(FUNCOES).map(([k, v]) => `<option value="${k}" ${u.funcao === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>`}
+      <div class="acoes"><button class="btn btn-perigo btn-mini" data-recusar>Recusar</button>${u.reivindica && estado.usuario.perfil !== 'ti' ? '' : `<button class="btn btn-primario btn-mini" data-liberar>${u.reivindica ? `Confirmar que é ${esc(u.reivindica.nome)}` : 'Liberar acesso'}</button>`}</div>
     </div>`).join('')}</div>` : ''}
     <div class="cartao">
     <h2>Usuários <button class="btn btn-primario btn-mini" id="novo-usuario">Novo usuário</button></h2>
@@ -1609,7 +1640,7 @@ async function gestaoUsuarios() {
     if (!linha) return;
     const u = pendentes.find((x) => x.id === Number(linha.dataset.id));
     if (e.target.closest('[data-liberar]')) {
-      await api(`/api/usuarios/${u.id}/liberar`, { method: 'POST', corpo: { perfil: $('[data-perfil]', linha).value, funcao: $('[data-funcao]', linha).value } });
+      await api(`/api/usuarios/${u.id}/liberar`, { method: 'POST', corpo: u.reivindica ? {} : { perfil: $('[data-perfil]', linha).value, funcao: $('[data-funcao]', linha).value } });
       avisar(`${u.nome} liberado(a). Já pode entrar com o usuário ${u.login}.`);
     } else if (e.target.closest('[data-recusar]')) {
       if (!confirm(`Recusar o cadastro de ${u.nome}? O cadastro será apagado.`)) return;

@@ -222,7 +222,8 @@ def cadastrar(request):
                     else ' Use outro sobrenome seu (ex.: fabricio.silva).'), 409)
     faturista = resposta == 'sim'
     u = Usuario(username=login_, first_name=nome, email=email, perfil='faturista', funcao='faturamento',
-                is_active=False, aguardando_liberacao=True, diz_faturista=faturista, trocar_senha=False)
+                is_active=False, aguardando_liberacao=True, diz_faturista=faturista, trocar_senha=False,
+                reivindica=usuario_reservado(nome) if d.get('reivindica') == 'sim' else None)
     u.set_password(senha)
     try:
         u.save()
@@ -267,7 +268,31 @@ def cadastro_usuario(request):
     login_ = str(request.GET.get('login') or '').strip().lower()[:30]
     nome = str(request.GET.get('nome') or '')[:80]
     livre = bool(login_) and usuario_livre(login_)
-    return JsonResponse({'livre': livre, 'sugestao': '' if livre else sugerir_usuario(nome, login_)})
+    return JsonResponse({'livre': livre, 'sugestao': '' if livre else sugerir_usuario(nome, login_),
+                         'reservado': perfil_reservado(nome)})
+
+
+ROTULO_RESERVADO = {'coordenadora': 'da Coordenação', 'supervisora': 'da Supervisão', 'diretor': 'da Diretoria'}
+PERGUNTA_RESERVADO = {'coordenadora': 'a Coordenadora', 'supervisora': 'a Supervisora', 'diretor': 'o Diretor'}
+
+
+def usuario_reservado(nome):
+    digitado = (partes_do_nome(nome) or [''])[0]
+    if len(digitado) < 3:
+        return None
+    achados = [u for u in Usuario.objects.filter(is_active=True, perfil__in=ROTULO_RESERVADO)
+               if (partes_do_nome(u.nome) or [''])[0].startswith(digitado)]
+    return achados[0] if len(achados) == 1 else None
+
+
+def perfil_reservado(nome):
+    """Coordenação, supervisão e diretoria já têm perfil criado. Se quem está se cadastrando digita o começo
+    do primeiro nome de uma dessas pessoas (3 letras ou mais), o cadastro pergunta se é ela.
+    Mostra só o primeiro nome e a função — nunca o usuário de login."""
+    u = usuario_reservado(nome)
+    if not u:
+        return None
+    return {'nome': u.nome.split()[0], 'funcao': ROTULO_RESERVADO[u.perfil], 'pergunta': PERGUNTA_RESERVADO[u.perfil]}
 
 
 def sair(request):
@@ -318,7 +343,8 @@ def pessoas(request):
 def usuario_json(u):
     return {'id': u.id, 'nome': u.nome, 'login': u.username, 'perfil': u.perfil, 'ativo': u.is_active,
             'criado_em': u.date_joined.date().isoformat(), 'trocar_senha': u.trocar_senha, 'funcao': u.funcao,
-            'email': u.email, 'aguardando': u.aguardando_liberacao, 'diz_faturista': u.diz_faturista}
+            'email': u.email, 'aguardando': u.aguardando_liberacao, 'diz_faturista': u.diz_faturista,
+            'reivindica': {'nome': u.reivindica.nome, 'perfil': u.reivindica.perfil} if u.reivindica_id else None}
 
 
 def perfis_que_pode_criar(u):
@@ -358,6 +384,20 @@ def liberar_cadastro(request, pk):
         alvo.delete()
         return JsonResponse({'ok': True})
     d = request.dados
+    if alvo.reivindica_id:
+        # "Sim, sou eu" para coordenação/supervisão/diretoria: só o TI confirma
+        if request.user.perfil != 'ti':
+            return erro('Só o TI confirma quem assume um perfil de coordenação, supervisão ou diretoria.', 403)
+        reservado = alvo.reivindica
+        with transaction.atomic():
+            login_, senha, email, nome = alvo.username, alvo.password, alvo.email, alvo.first_name
+            alvo.delete()  # o cadastro novo vira a conta reservada: uma conta só, com o histórico dela
+            reservado.username, reservado.password, reservado.first_name = login_, senha, nome
+            reservado.email = email or reservado.email
+            reservado.is_active, reservado.trocar_senha, reservado.aguardando_liberacao = True, False, False
+            reservado.save()
+        log.info('perfil reservado assumido usuario=%s perfil=%s por=%s', login_, reservado.perfil, request.user.username)
+        return JsonResponse(usuario_json(reservado))
     perfil = d.get('perfil') or 'faturista'
     if perfil not in perfis_que_pode_criar(request.user):
         return erro('Você não pode liberar esse perfil.', 403)
@@ -1390,7 +1430,8 @@ def mensagens_conversas(request):
     equipe, por_pessoa = nao_lidas(u)
     ultima = lambda qs: (lambda m: mensagem_json(m, u) if m else None)(qs.select_related('autor').order_by('-id').first())
     lista = [{'chave': 'equipe', 'nome': 'Equipe toda', 'naoLidas': equipe, 'ultima': ultima(conversa_qs(u, 'equipe'))}]
-    for p in Usuario.objects.filter(is_active=True).exclude(id=u.id).order_by('first_name'):
+    # Só aparece no chat quem já entrou no sistema pelo menos uma vez
+    for p in Usuario.objects.filter(is_active=True, last_login__isnull=False).exclude(id=u.id).order_by('first_name'):
         lista.append({'chave': str(p.id), 'nome': p.nome, 'perfil': p.perfil, 'naoLidas': por_pessoa.get(p.id, 0),
                       'ultima': ultima(conversa_qs(u, str(p.id)))})
     # Equipe toda primeiro; depois quem tem mensagem mais recente

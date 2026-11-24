@@ -25,6 +25,9 @@ class Usuario(AbstractUser):
     aguardando_liberacao = models.BooleanField('aguardando liberação', default=False)
     # Resposta do cadastro "Você é faturista?" (sugere o perfil na hora de liberar)
     diz_faturista = models.BooleanField(null=True, blank=True)
+    # Cadastro de quem disse "Sim, sou eu" para um perfil já criado (coordenação, supervisão, diretoria).
+    # Só o TI confirma; ao confirmar, essa pessoa assume o perfil reservado.
+    reivindica = models.ForeignKey('self', models.SET_NULL, null=True, blank=True, related_name='+')
     # Última mensagem da conversa "Equipe toda" que a pessoa já viu (para contar as não lidas)
     equipe_lida_ate = models.PositiveIntegerField(default=0)
 

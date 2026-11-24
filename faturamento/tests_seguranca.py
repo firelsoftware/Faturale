@@ -241,3 +241,78 @@ class PerfilTiTests(TestCase):
     def test_faturista_nao_libera_cadastro(self):
         self.client.force_login(self.fat)
         self.assertEqual(self.client.get('/api/usuarios').status_code, 403)
+
+
+class PerfilReservadoTests(TestCase):
+    """Cadastro pergunta "Você é a Thalita, da Coordenação?" sem revelar o usuário de login."""
+
+    def setUp(self):
+        cache.clear()
+        Usuario.objects.create_user('thalita', password='Senha-Forte-123', first_name='Thalita', perfil='coordenadora')
+        Usuario.objects.create_user('larissa', password='Senha-Forte-123', first_name='Larissa', perfil='supervisora')
+        Usuario.objects.create_user('leandro', password='Senha-Forte-123', first_name='Leandro', perfil='diretor')
+        Usuario.objects.create_user('lara.lima', password='Senha-Forte-123', first_name='Lara Lima', perfil='faturista')
+
+    def reservado(self, nome):
+        return self.client.get('/api/cadastro/usuario', {'nome': nome}).json()['reservado']
+
+    def test_sugere_ao_digitar(self):
+        self.assertEqual(self.reservado('Tha'), {'nome': 'Thalita', 'funcao': 'da Coordenação', 'pergunta': 'a Coordenadora'})
+        self.assertEqual(self.reservado('larissa sil')['pergunta'], 'a Supervisora')
+        self.assertEqual(self.reservado('Leandro')['pergunta'], 'o Diretor')
+
+    def test_nao_sugere_cedo_nem_ambiguo_nem_faturista(self):
+        self.assertIsNone(self.reservado('Th'))        # menos de 3 letras
+        self.assertEqual(self.reservado('Lar')['nome'], 'Larissa')  # Lara é faturista: não conta
+        self.assertIsNone(self.reservado('Maria'))
+
+    def test_nao_revela_o_usuario(self):
+        r = self.client.get('/api/cadastro/usuario', {'nome': 'Thalita'}).json()
+        self.assertEqual(set(r['reservado']), {'nome', 'funcao', 'pergunta'})  # só o primeiro nome e a função
+
+
+@override_settings(FATURALE_MODO_DEMO=False)
+class AssumirPerfilReservadoTests(TestCase):
+    """"Sim, sou eu" para a coordenação: só o TI confirma; ao confirmar, vira uma conta só."""
+
+    def setUp(self):
+        cache.clear()
+        mk = lambda login, nome, perfil: Usuario.objects.create_user(login, password='Senha-Forte-123', first_name=nome,
+                                                                      perfil=perfil, trocar_senha=False)
+        self.thalita = mk('thalita', 'Thalita', 'coordenadora')
+        self.larissa = mk('larissa', 'Larissa', 'supervisora')
+        self.ti = mk('fabricio.alves', 'Fabrício Alves', 'ti')
+
+    def cadastrar(self, reivindica):
+        return self.client.post('/api/cadastro', json.dumps({
+            'nome': 'Thalita Souza', 'login': 'thalita.souza', 'senha': 'Minha-Senha-Nova-9', 'confirmacao': 'Minha-Senha-Nova-9',
+            'faturista': 'nao', 'reivindica': reivindica}), content_type='application/json')
+
+    def test_pergunta_do_cadastro(self):
+        r = self.client.get('/api/cadastro/usuario', {'nome': 'Thal'}).json()['reservado']
+        self.assertEqual((r['nome'], r['pergunta']), ('Thalita', 'a Coordenadora'))
+
+    def test_so_ti_confirma_e_vira_uma_conta_so(self):
+        self.assertEqual(self.cadastrar('sim').status_code, 200)
+        novo = Usuario.objects.get(username='thalita.souza')
+        self.assertEqual(novo.reivindica, self.thalita)
+        self.assertFalse(novo.is_active)
+        # supervisão não confirma
+        self.client.force_login(self.larissa)
+        r = self.client.post(f'/api/usuarios/{novo.id}/liberar', '{}', content_type='application/json')
+        self.assertEqual(r.status_code, 403)
+        # TI confirma: a conta da coordenação passa a ter o usuário e a senha que a pessoa criou
+        self.client.force_login(self.ti)
+        r = self.client.post(f'/api/usuarios/{novo.id}/liberar', '{}', content_type='application/json')
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(Usuario.objects.filter(pk=novo.id).exists())
+        self.thalita.refresh_from_db()
+        self.assertEqual((self.thalita.username, self.thalita.perfil, self.thalita.first_name), ('thalita.souza', 'coordenadora', 'Thalita Souza'))
+        self.client.logout()
+        r = self.client.post('/api/entrar', json.dumps({'login': 'thalita.souza', 'senha': 'Minha-Senha-Nova-9'}), content_type='application/json')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('coordenacao', self.client.get('/api/eu').json()['abas'])
+
+    def test_sem_sim_nao_reivindica(self):
+        self.cadastrar('')
+        self.assertIsNone(Usuario.objects.get(username='thalita.souza').reivindica)

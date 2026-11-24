@@ -42,7 +42,9 @@
         </form>
 
         <form id="form-cadastro" class="oculto">
-          <div class="campo"><label>Nome e sobrenome</label><input name="nome" required maxlength="80" autocomplete="name" placeholder="ex.: Fabrício Alves" pattern=".*\S+\s+\S+.*" title="Escreva o nome e o sobrenome"></div>
+          <div class="campo"><label>Nome e sobrenome</label><input name="nome" required maxlength="80" autocomplete="name" placeholder="ex.: Fabrício Alves" pattern=".*\S+\s+\S+.*" title="Escreva o nome e o sobrenome">
+            <div class="reservado oculto" id="reservado" role="status"></div>
+            <input type="hidden" name="reivindica" value=""></div>
           <div class="campo"><label>Usuário (nome.sobrenome)</label><input name="login" required maxlength="30" pattern="[a-z0-9]+(\.[a-z0-9]+)+" title="nome.sobrenome, letras minúsculas sem acento (ex.: fabricio.alves)" placeholder="ex.: fabricio.alves" autocomplete="username">
             <small class="usuario-aviso oculto" id="usuario-aviso"></small></div>
           <div class="campo"><label>E-mail</label><input name="email" type="email" maxlength="120" autocomplete="email" placeholder="ex.: fabricio.alves@gmail.com"></div>
