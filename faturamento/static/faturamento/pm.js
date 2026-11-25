@@ -9,7 +9,7 @@ const HOB_CNPJ = '00649756000166';
 export const UNIDADES = {
   ISOB: { origem: ISOB.codigo, padrao: '4.01.00', executante: { tipo: 'codigo', codigo: ISOB.codigo, cnes: ISOB.cnes } },
   HOB: { origem: HOB_CNPJ, padrao: '3.05.00', executante: { tipo: 'cnpj', cnpj: HOB_CNPJ } },
-  HOG: { origem: '02769526000166', padrao: '4.01.00', executante: null }, // Clinica Sul de Oftalmologia
+  HOG: { origem: '02769526000166', padrao: '4.01.00', executante: { tipo: 'cnpj', cnpj: '02769526000166' } }, // Clinica Sul de Oftalmologia
   INBOL: { origem: '37114071000125', padrao: '4.01.00', executante: { tipo: 'codigo', codigo: '37114071000125', cnes: '7980221' } },
 };
 // Consultas de oftalmologia (10101304 a 10101313): o código fica, a tabela é 00

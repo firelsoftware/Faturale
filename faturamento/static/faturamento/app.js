@@ -2004,7 +2004,7 @@ async function telaPm() {
         <li>Capsulotomia YAG <b>30306019</b> na ISOB, HOG e INBOL → <b>90300240</b>, tabela 98.</li>
         <li><b>90300240</b> e <b>90300239</b>: inclui viaAcesso 1 e tecnicaUtilizada 1 depois da quantidade.</li>
         <li>Guia repetida no lote: um <b>0</b> na frente de uma delas.</li>
-        <li>Executante: ISOB código 03056609000170 e CNES 7766777 · HOB CNPJ 00649756000166 · INBOL código 37114071000125 e CNES 7980221 · HOG fica como veio.</li>
+        <li>Executante: ISOB código 03056609000170 e CNES 7766777 · HOB CNPJ 00649756000166 · INBOL código 37114071000125 e CNES 7980221 · HOG CNPJ 02769526000166.</li>
       </ol>
       <p><b>Para e não devolve o arquivo:</b> <b class="pm-vermelho">A</b> código 41501144 no código do procedimento (na descrição é ignorado) · <b class="pm-amarelo">B</b> exame aberto com código TUSS (tabela 22, fora consulta e pronto-socorro) · <b>C</b> qualquer situação fora das regras, hash original que não confere, unidade desconhecida.</p>
       <p>Nunca altera valores, quantidades, datas, carteira, materiais e medicamentos. O total do lote tem que ficar igual.</p>
