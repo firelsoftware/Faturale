@@ -4,6 +4,14 @@
 
 const ISOB = { codigo: '03056609000170', cnes: '7766777' };
 const HOB_CNPJ = '00649756000166';
+// Unidades: como achar no arquivo (origem), padrão TISS e como o executante vai na guia.
+// executante 'codigo' = codigoPrestadorNaOperadora + CNES · 'cnpj' = cnpjContratado · null = fica como veio
+export const UNIDADES = {
+  ISOB: { origem: ISOB.codigo, padrao: '4.01.00', executante: { tipo: 'codigo', codigo: ISOB.codigo, cnes: ISOB.cnes } },
+  HOB: { origem: HOB_CNPJ, padrao: '3.05.00', executante: { tipo: 'cnpj', cnpj: HOB_CNPJ } },
+  HOG: { origem: '02769526000166', padrao: '4.01.00', executante: null }, // Clinica Sul de Oftalmologia
+  INBOL: { origem: '37114071000125', padrao: '4.01.00', executante: { tipo: 'codigo', codigo: '37114071000125', cnes: '7980221' } },
+};
 // Consultas de oftalmologia (10101304 a 10101313): o código fica, a tabela é 00
 const CONSULTAS_OFTALMO = ['10101304', '10101305', '10101306', '10101307', '10101308', '10101309', '10101310', '10101311', '10101312', '10101313'];
 const CONSULTA = '10101012';
@@ -103,13 +111,11 @@ function trocaValor(bloco, nome, novo) {
 
 export function detectarUnidade(texto) {
   const origem = (texto.match(/<ans:origem>[\s\S]*?<\/ans:origem>/) || [''])[0];
-  if (origem.includes(HOB_CNPJ)) return 'HOB';
-  if (origem.includes(ISOB.codigo)) return 'ISOB';
-  return '';
+  return Object.keys(UNIDADES).find((u) => origem.includes(UNIDADES[u].origem)) || '';
 }
 
 // ---------- correção ----------
-// unidadeEscolhida: 'ISOB', 'HOB' ou '' (pelo CNPJ da origem)
+// unidadeEscolhida: 'ISOB', 'HOB', 'HOG', 'INBOL' ou '' (pelo CNPJ da origem)
 export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
   let t = bytesParaTexto(bytes);
   const original = t;
@@ -145,10 +151,10 @@ export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
   // Unidade
   r.unidadeOrigem = detectarUnidade(t);
   r.unidade = unidadeEscolhida || r.unidadeOrigem;
-  if (!r.unidade) C('—', 'Não deu para saber a unidade (ISOB ou HOB) pelo CNPJ da origem. Escolha a unidade e jogue o arquivo de novo.');
+  if (!r.unidade) C('—', `Não deu para saber a unidade (${Object.keys(UNIDADES).join(', ')}) pelo CNPJ da origem. Escolha a unidade e jogue o arquivo de novo.`);
   else if (!unidadeEscolhida) obs('—', `Unidade ${r.unidade} identificada pelo CNPJ da origem. Confirme.`);
   else if (r.unidadeOrigem && r.unidadeOrigem !== unidadeEscolhida) obs('—', `Você escolheu ${unidadeEscolhida}, mas o CNPJ da origem é do ${r.unidadeOrigem}. Confira.`);
-  const padraoEsperado = { ISOB: '4.01.00', HOB: '3.05.00' }[r.unidade];
+  const padraoEsperado = UNIDADES[r.unidade]?.padrao;
   if (padraoEsperado && r.padrao && r.padrao !== padraoEsperado) obs('—', `Padrão TISS ${r.padrao}; o esperado para ${r.unidade} é ${padraoEsperado}.`);
 
   // 41501144 fora das guias (o resto é apontado guia por guia). Só conta no codigoProcedimento:
@@ -231,9 +237,9 @@ export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
         if (tabela !== '22') C(numero, `Pronto-socorro ${codigo} veio com tabela ${tabela} (esperado 22). Mantido como veio.`);
         return p;
       }
-      // 6. Capsulotomia YAG na ISOB -> 90300240, tabela 98
+      // 6. Capsulotomia YAG (ISOB, HOG, INBOL) -> 90300240, tabela 98
       if (codigo === CAPSULOTOMIA_TUSS) {
-        if (r.unidade !== 'ISOB') { C(numero, `Capsulotomia ${codigo} fora da ISOB: não há regra. Mantido como veio.`); return p; }
+        if (r.unidade === 'HOB' || !r.unidade) { C(numero, `Capsulotomia ${codigo} no ${r.unidade || 'lote sem unidade'}: não há regra. Mantido como veio.`); return p; }
         p = trocaValor(trocaValor(p, 'codigoProcedimento', CAPSULOTOMIA), 'codigoTabela', '98');
         r.contagem.capsulotomia++;
         mudou(numero, 'capsulotomia', `Capsulotomia ${codigo} (tab. ${tabela}) → ${CAPSULOTOMIA} (tab. 98)`);
@@ -293,18 +299,23 @@ export function corrigirPm(bytes, nomeArquivo, unidadeEscolhida = '') {
     else if (r.unidade) {
       let e = exec[0];
       const antes = e;
-      if (r.unidade === 'ISOB') {
+      const regra = UNIDADES[r.unidade]?.executante;
+      if (regra?.tipo === 'codigo') {
         const id = e.match(/<ans:(codigoPrestadorNaOperadora|cnpjContratado|cpfContratado)>([^<]*)<\/ans:\1>/);
         if (!id) C(numero, 'Executante sem código/CNPJ do prestador.');
-        else if (id[1] !== 'codigoPrestadorNaOperadora' || id[2].trim() !== ISOB.codigo) {
-          e = e.replace(id[0], `<ans:codigoPrestadorNaOperadora>${ISOB.codigo}</ans:codigoPrestadorNaOperadora>`);
+        else if (id[1] !== 'codigoPrestadorNaOperadora' || id[2].trim() !== regra.codigo) {
+          e = e.replace(id[0], `<ans:codigoPrestadorNaOperadora>${regra.codigo}</ans:codigoPrestadorNaOperadora>`);
         }
         if (!/<ans:CNES>/.test(e)) C(numero, 'Executante sem CNES.');
-        else if (tag(e, 'CNES') !== ISOB.cnes) e = trocaValor(e, 'CNES', ISOB.cnes);
-      } else {
+        else if (tag(e, 'CNES') !== regra.cnes) e = trocaValor(e, 'CNES', regra.cnes);
+      } else if (regra?.tipo === 'cnpj') {
         const cnpj = tag(e, 'cnpjContratado');
-        if (cnpj === null) C(numero, 'Executante do HOB sem cnpjContratado.');
-        else if (cnpj !== HOB_CNPJ) e = trocaValor(e, 'cnpjContratado', HOB_CNPJ);
+        if (cnpj === null) C(numero, `Executante do ${r.unidade} sem cnpjContratado.`);
+        else if (cnpj !== regra.cnpj) e = trocaValor(e, 'cnpjContratado', regra.cnpj);
+      } else if (!r.execAvisado) {
+        r.execAvisado = true;
+        const id = (e.match(/<ans:(?:codigoPrestadorNaOperadora|cnpjContratado)>([^<]*)</) || [])[1] || '?';
+        obs('—', `${r.unidade}: o executante fica como veio (${id.trim()}, CNES ${tag(e, 'CNES') || '?'}). Confira.`);
       }
       if (e !== antes) {
         g = g.replace(antes, e);

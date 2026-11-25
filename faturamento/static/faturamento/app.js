@@ -1981,12 +1981,12 @@ async function telaPm() {
     <div class="cartao">
       <h2>XML dos lotes</h2>
       <div class="pm-unidade"><span>Unidade:</span>
-        ${[['', 'Pelo CNPJ do arquivo'], ['ISOB', 'ISOB'], ['HOB', 'HOB']].map(([v, n]) => `<button type="button" class="btn btn-mini ${unidadePm === v ? 'btn-primario' : 'btn-claro'}" data-unidade="${v}">${n}</button>`).join('')}
+        ${[['', 'Pelo CNPJ do arquivo'], ['ISOB', 'ISOB'], ['HOB', 'HOB'], ['HOG', 'HOG'], ['INBOL', 'INBOL']].map(([v, n]) => `<button type="button" class="btn btn-mini ${unidadePm === v ? 'btn-primario' : 'btn-claro'}" data-unidade="${v}">${n}</button>`).join('')}
       </div>
       <label class="solta" id="pm-solta">
         ${icone('upload')}
         <b>Arraste aqui um ou mais XML (guia SP-SADT)</b>
-        <span>ISOB padrão 4.01.00 · HOB padrão 3.05.00 · ISO-8859-1</span>
+        <span>ISOB, HOG e INBOL padrão 4.01.00 · HOB padrão 3.05.00 · ISO-8859-1</span>
         <input type="file" accept=".xml,text/xml" multiple hidden id="pm-arquivo">
       </label>
       <div class="pm-acao"><span id="pm-escolhidos" class="apagado">Nenhum arquivo escolhido</span>
@@ -2001,12 +2001,12 @@ async function telaPm() {
         <li>Consultas de oftalmologia <b>10101304 a 10101313</b>: o código fica, tabela <b>00</b>.</li>
         <li>Pronto-socorro <b>10101039</b> (tabela 22): não mexe.</li>
         <li>Se vier <b>10101012</b>: tabela 22 e a tag <b>senha</b> da guia é apagada.</li>
-        <li>Capsulotomia YAG <b>30306019</b> na ISOB → <b>90300240</b>, tabela 98.</li>
+        <li>Capsulotomia YAG <b>30306019</b> na ISOB, HOG e INBOL → <b>90300240</b>, tabela 98.</li>
         <li><b>90300240</b> e <b>90300239</b>: inclui viaAcesso 1 e tecnicaUtilizada 1 depois da quantidade.</li>
         <li>Guia repetida no lote: um <b>0</b> na frente de uma delas.</li>
-        <li>Executante: ISOB código 03056609000170 e CNES 7766777 · HOB CNPJ 00649756000166.</li>
+        <li>Executante: ISOB código 03056609000170 e CNES 7766777 · HOB CNPJ 00649756000166 · INBOL código 37114071000125 e CNES 7980221 · HOG fica como veio.</li>
       </ol>
-      <p><b>Para e não devolve o arquivo:</b> <b class="pm-vermelho">A</b> código 41501144 (mesmo só na descrição) · <b class="pm-amarelo">B</b> exame aberto com código TUSS (tabela 22, fora consulta e pronto-socorro) · <b>C</b> qualquer situação fora das regras, hash original que não confere, unidade desconhecida.</p>
+      <p><b>Para e não devolve o arquivo:</b> <b class="pm-vermelho">A</b> código 41501144 no código do procedimento (na descrição é ignorado) · <b class="pm-amarelo">B</b> exame aberto com código TUSS (tabela 22, fora consulta e pronto-socorro) · <b>C</b> qualquer situação fora das regras, hash original que não confere, unidade desconhecida.</p>
       <p>Nunca altera valores, quantidades, datas, carteira, materiais e medicamentos. O total do lote tem que ficar igual.</p>
     </details>`;
 
